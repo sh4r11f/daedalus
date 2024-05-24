@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 # ==================================================================================================== #
-#                                                                                                      #
-#                                                                                                      #
-#               SCRIPT: base.py                                                                        #
-#                                                                                                      #
-#                                                                                                      #
-#          DESCRIPTION: Basic class for experiments                                                    #
-#                                                                                                      #
-#                                                                                                      #
-#                 RULE: DAYW                                                                           #
-#                                                                                                      #
-#                                                                                                      #
-#                                                                                                      #
-#              CREATOR: Sharif Saleki                                                                  #
-#                 TIME: 05-22-2024-7810598105114117                                                    #
-#                SPACE: Dartmouth College, Hanover, NH                                                 #
-#                                                                                                      #
+#                                                                                                                                                                         #
+#                                                                                                                                                                         #
+#               SCRIPT: base.py                                                                                                                                   #
+#                                                                                                                                                                         #
+#                                                                                                                                                                         #
+#          DESCRIPTION: Basic class for experiments                                                                                                   #
+#                                                                                                                                                                         #
+#                                                                                                                                                                         #
+#                 RULE: DAYW                                                                                                                                       #
+#                                                                                                                                                                         #
+#                                                                                                                                                                         #
+#                                                                                                                                                                         #
+#              CREATOR: Sharif Saleki                                                                                                                          #
+#                 TIME: 05-22-2024-7810598105114117                                                                                                   #
+#                SPACE: Dartmouth College, Hanover, NH                                                                                                #
+#                                                                                                                                                                         #
 # ==================================================================================================== #
 import yaml
 import argparse
