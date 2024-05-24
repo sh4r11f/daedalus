@@ -1,0 +1,4 @@
+include README.md
+include docs/*.txt
+include daedalus/params/*.json
+include daedalus/data/*
