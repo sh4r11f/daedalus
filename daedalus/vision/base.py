@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ==================================================================================================== #
 #                                                                                                                                                                                                      #
@@ -51,22 +50,17 @@ class Experiment:
         debug (bool): Debug mode for the experiment.
         info (dict): Subject and experiment information.
     """
-    def __init__(
-            self, 
-            name: str, 
-            project_root: Union[str, Path], 
-            version: float, 
-            debug: bool
-        ):
+    def __init__(self, project_root: Union[str, Path], platform: str, debug: bool):
 
         # Setup
-        self.exp_type = 'basic'
-        self.name = name
         self.project_root = Path(project_root)
-        self.version = version
+        self.platform = platform
         self.debug = debug
 
+        self.exp_type = 'basic'
         self.settings = self.read_config('settings')
+        self.name = self.settings["Study"]["Name"]
+        self.version = self.settings["Study"]["Version"]
         self.directories = self._setup_directories()
         self.files = dict()
 
@@ -79,7 +73,7 @@ class Experiment:
         for key, value in self.settings["Study"].items():
             self.logger.info(f"{key}: {value}")
 
-        # Clock to keep track of timing.
+        # Clock to keep track of timing
         self.clock = core.Clock()
 
     def read_config(self, conf_name: str):
@@ -108,6 +102,22 @@ class Experiment:
             raise FileNotFoundError(f"{str(params_file)} does not exist")
 
         return params
+    
+    def find_in_configs(self, dicts: list, key: str, value: str):
+        """
+        Finds the value of a target in a list of dictionaries.
+
+        Args:
+            dicts (list): A list of dictionaries to search.
+            key (str): The key that should match.
+            value (str): The value for key .
+
+        Returns:
+            dict: The dictionary that contains the target value.
+        """
+        for d in dicts:
+            if d[key] == value:
+                return d
 
     def _setup_directories(self) -> Dict:
         """
@@ -120,18 +130,31 @@ class Experiment:
         Returns
             dict: data, sub, and task keys and the corresponding Path objects as values.
         """
+        dirs = dict()
+
+        # Project 
+        dirs["project"] = self.project_root
+
         # Config directory
         config_dir = self.root / "config"
 
         # Data directory
         data_dir = self.root / "data" / f"v{self.version}"
         data_dir.mkdir(parents=True, exist_ok=True)
+        dirs["data"] = data_dir
 
         # Log directory
         log_dir = self.root / "log" / f"v{self.version}"
         log_dir.mkdir(parents=True, exist_ok=True)
+        dirs["log"] = log_dir
 
-        dirs = {"data": data_dir, "config": config_dir, "log": log_dir}
+        # Other directories
+        platform_settings = self.find_in_configs(self.settings["Study"]["Platform"], "Name", self.platform)
+        modules = platform_settings["Modules"]
+        for mod in modules:
+            name = mod["name"]
+            path = mod["path"]
+            dirs[name] = path
 
         return dirs
 
