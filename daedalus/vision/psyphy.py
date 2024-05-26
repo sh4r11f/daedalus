@@ -13,7 +13,7 @@
 #                                                                                                      #
 #                                                                                                      #
 #              CREATOR: Sharif Saleki                                                                  #
-#                 TIME: 05-22-2024-7810598105114117                                                    #
+#                 TIME: 05-22-2024-78 105 98 105114117                                                    #
 #                SPACE: Dartmouth College, Hanover, NH                                                 #
 #                                                                                                      #
 # ==================================================================================================== #
@@ -35,7 +35,7 @@ import pylink
 
 from . import Experiment
 
-class PsychophysicsExperiment(Experiment, ABC):
+class PsychophysicsExperiment(Experiment):
     """
     Base class for all the experiments. It contains all the necessary methods and attributes that are common to all
     """
@@ -47,32 +47,16 @@ class PsychophysicsExperiment(Experiment, ABC):
         # Experiment and subject info
         if info is None:
             if self.debug:
-                self.info = self.bag_debug_info()
+                self.info = self.bag_fake_info()
             else:
                 self.info = self.bag_info_gui()
         else:
             self.info = info
 
-        # Set up directories and files
-        self.directories = self._setup_directories()
-        self.files = dict()
-
-        # Initialize other params
-        self.stimuli = dict()
-
         # Get monitor and make window
         self.monitor, self.window = self.make_display()
 
-        # Set up logging
-        self._init_logging()
-
-        # Rounding numbers to these many decimal points
-        self.round_err = 8
-
-        # Clock to keep track of timing.
-        self.clock = core.Clock()
-
-    def debug_info(self):
+    def bag_fake_info(self):
         """
         Fake info for debugging 
         """
@@ -86,33 +70,6 @@ class PsychophysicsExperiment(Experiment, ABC):
         }
 
         return info
-
-    def load_config(self, conf_name: str):
-        """
-        Reads and saves parameters specified in a json file under the config directory, e.g. config/params.json
-
-        Args:
-            conf_name (str): Name of the file to be loaded.
-
-        Returns:
-            dict: The .json file is returned as a python dictionary.
-        """
-        # Find the parameters file
-        params_file = self.root / "config" / f"{conf_name}.yaml"
-
-        # Check its status and read it
-        if params_file.is_file():
-            try:
-                with open(params_file) as pf:
-                    params = yaml.safe_load(pf)
-            # for corrupted files or other issues
-            except IOError as e:
-                logging.error(f"Unable to open the {conf_name} file: {e}")
-                raise f"Unable to open the {conf_name} file: {e}"
-        else:
-            raise FileNotFoundError(f"{str(params_file)} does not exist")
-
-        return params
 
     def bag_info_cl(self):
         """

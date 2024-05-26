@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 created 1/13/20 
 
@@ -14,25 +13,31 @@ def readme():
         return f.read()
 
 
-setup(name='daedalus',
-      version='1.0',
-      description='Set of routine attributes/functions for vision science experiments',
-      long_description=readme(),
-      classifiers=[
+setup(
+    name='daedalus',
+    version='1.0',
+    description='Set of routine functionalities for neuroscience experiments',
+    long_description=readme(),
+    classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3.7',
         'Topic :: Cognitive Neuroscience :: Psychophysics',
-      ],
-      keywords='funniest joke comedy flying circus',
-      url='http://github.com/devxl/daedalus',
-      author='DevXI',
-      author_email='sharif.saleki@gmail.com',
-      packages=['daedalus'],
-      install_requires=[
-          'psychopy',
-      ],
-      test_suite='nose.collector',
-      tests_require=['nose'],
-      include_package_data=True,
-      zip_safe=False)
+        ],
+    keywords='Vision, Psychophysics, Neuroscience, Experiments, Python',
+    url='http://github.com/sh4r11f/daedalus',
+    author='Sharif Saleki',
+    author_email='sharif.saleki@gmail.com',
+    packages=[
+        'daedalus'
+        ],
+    install_requires=[
+        'psychopy',
+        ],
+    test_suite='nose.collector',
+    tests_require=[
+        'nose'
+        ],
+    include_package_data=True,
+    zip_safe=False
+    )
