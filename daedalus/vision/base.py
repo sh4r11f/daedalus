@@ -403,3 +403,7 @@ class Experiment:
         n_dropped = len(np.where(z_intervals > 3)[0])
 
         return n_dropped
+    
+    def ms2fr(self, duration: float):
+        """ Converts durations from ms to display frames"""
+        return np.ceil(duration * self.params["refresh_rate"] / 1000).astype(int)

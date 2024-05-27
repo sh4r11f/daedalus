@@ -28,7 +28,7 @@ import pylink
 from .psyphy import PsychophysicsExperiment
 
 
-class EyeLink:
+class EyetrackingExperiment(PsychophysicsExperiment):
     """
     Main template for eye tracking experiments running on the Eyelink1000 Plus. It mostly adds functionality for
     communicating and controlling the Eyelink. Other than that, it pretty much implements all its parents methods.
@@ -68,6 +68,41 @@ class EyeLink:
         self.configure_tracker()
         self.setup_calibration()
 
+    def calibrate_tracker(self):
+        """
+		Calibrate the Eyelink 1000
+		"""
+  		# Configure a graphics environment (genv) for tracker calibration
+        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker, self.window)
+
+		# Set background and foreground colors for the calibration target
+		# in PsychoPy, (-1, -1, -1)=black, (1, 1, 1)=white, (0, 0, 0)=mid-gray
+        foreground_color = (1, 1, 1)
+        background_color = self.params["BG_COLOR"]
+		# background_color = (-1, -1, -1)
+        genv.setCalibrationColors(foreground_color, background_color)
+
+		# Set up the calibration target
+		# Use the default calibration target ('circle')
+        genv.setTargetType('circle')
+
+		# Configure the size of the calibration target (in pixels)
+		# this option applies only to "circle" and "spiral" targets
+        genv.setTargetSize(24)
+
+		# Beeps to play during calibration, validation and drift correction
+		# parameters: target, good, error
+		#     target -- sound to play when target moves
+		#     good -- sound to play on successful operation
+		#     error -- sound to play on failure or interruption
+		# Each parameter could be ''--default sound, 'off'--no sound, or a wav file
+        genv.setCalibrationSounds('', '', '')
+
+		# Request Pylink to use the PsychoPy window we opened above for calibration
+        pylink.openGraphicsEx(genv)
+		# Start the calibration
+        self.tracker.doTrackerSetup()
+  
     def connect_tracker(self):
         """
         Connects to an Eyelink 1000 using its python API (pylink).

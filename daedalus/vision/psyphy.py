@@ -25,10 +25,9 @@ from abc import abstractmethod
 from typing import Union, Tuple
 
 import numpy as np
-from scipy import stats
+import pandas as pd
 
 from psychopy import gui, data
-from psychopy.iohub.devices import Computer
 
 from . import Experiment
 
@@ -46,8 +45,9 @@ class PsychophysicsExperiment(Experiment):
         self.parameters = self.load_config('parameters')
         self.exp_params = self.find_in_configs(self.parameters["Experiment"], "Version", self.version)
         self.stim_params = self.find_in_configs(self.parameters["Stimuli"], "Version", self.version)
+        
         self.subject_info = dict()
-
+        self.init_participants_file()
 
     def choose_session_gui(self):
         """
@@ -62,7 +62,7 @@ class PsychophysicsExperiment(Experiment):
 
         dlg.show()
         if dlg.OK:
-            return dlg.data[0]
+            return dlg.data
         else:
             return None
     
@@ -76,37 +76,94 @@ class PsychophysicsExperiment(Experiment):
         dlg.addFixedField("Version", self.version)
 
         required_info = self.exp_params["Info"]["Subjects"]
+        valid_pids = [f"{id:02d}" for id in range(1, int(self.exp_params["Counts"]["subjects"]) + 1)]
+        if burnt_PIDs is not None:
+            valid_pids = [pid for pid in valid_pids if pid not in burnt_PIDs]
+
         for field in required_info:
             if isinstance(required_info[field], list):
                 dlg.addField(field, choices=required_info[field])
             else:
-
-                dlg.addField(field)
+                if field == "PID":
+                    dlg.addField(field, choices=valid_pids)
+                else:
+                    dlg.addField(field)
 
         dlg.show()
         if dlg.OK:
-            for i, field in enumerate(required_info):
-                self.subject_info[field] = dlg.data[i]
-            return True
+            return dlg.data
         else:
-            return False
+            return None
         
-    def load_subject_gui(self):
+    def load_subject_gui(self, valid_PIDs: list):
         """
         GUI for loading the subject.
         """
+        # Make the dialog
         dlg = gui.Dlg(title="Load Subject", labelButtonOK="Load", labelButtonCancel="Exit")
         dlg.addText("Experiment", self.name, color="blue")
         dlg.addText("Date", data.getDateStr(), color="blue")
         dlg.addFixedField("Version", self.version)
-        dlg.addField("Subject ID")
+        dlg.addField("PID", choices=valid_PIDs)
 
+        # Show the dialog
         dlg.show()
+
         if dlg.OK:
-            return dlg.data[0]
+
+            # Load the subject info
+            subject_pid = dlg.data[0]
+            subject_info = self.load_subject_info(subject_pid)
+
+            # Display the subject info to get confirmation
+            conf_dlg = gui.Dlg(title=f"Found info for participant {subject_pid}", labelButtonOK="Confirm", labelButtonCancel="Exit")
+            conf_dlg.addText("Please confirm the following information.", self.name, color="red")
+            for field, info in subject_info:
+                conf_dlg.addFixedField(field, info)
+
+            # Show the dialog
+            conf_dlg.show()
+            if conf_dlg.OK:
+                return subject_info
+            else:
+                return None
+        else: 
+            return None
+        
+    def load_subject_info(self, pid: str):
+        """
+        Loads the subject info from the subject file.
+        """
+        df = pd.read_csv(self.files["participants"], sep="\t")
+        if pid not in df["PID"].values:
+            raise ValueError(f"PID {pid} not found in the participant file.")
+        else:
+            subject_info = df[df["PID"] == pid].to_dict(orient="records")[0]
+            return subject_info
+
+    def init_participants_file(self):
+        """
+        Initializes the participants file.
+        """
+        participant_file = self.directories["data"] / "participants.tsv"
+        self.files["participants"] = participant_file
+
+        if not participant_file.exists():
+            columns = list(self.exp_params["Info"]["Subjects"].keys()) + ["Date", "Experiment", "Version"]
+            df = pd.DataFrame(columns=columns)
+            df.to_csv(participant_file, sep="\t", index=False)
         else:
             return None
-
+        
+    def save_subject_info(self, subject_info: dict):
+        """
+        Saves the subject info to the participants file.
+        """
+        df = pd.read_csv(self.files["participants"], sep="\t")
+        sub_df = pd.DataFrame([subject_info])
+        out_df = pd.concat([df, sub_df], ignore_index=True)
+        out_df.to_csv(self.files["participants"], sep="\t", index=False)
+        
     @abstractmethod
     def plan_session(self, **kwargs):
         """
