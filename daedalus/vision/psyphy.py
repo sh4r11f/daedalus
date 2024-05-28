@@ -18,21 +18,19 @@
 #                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
-import yaml
 from pathlib import Path
 
 from abc import abstractmethod
-from typing import Union, Tuple
+from typing import Union
 
-import numpy as np
 import pandas as pd
 
 from psychopy import gui, data
 
-from . import Experiment
+from .base import Experiment
 
 
-class PsychophysicsExperiment(Experiment):
+class Psychophysics(Experiment):
     """
     Base class for all the experiments. It contains necessary methods and attributes.
     """
@@ -40,12 +38,13 @@ class PsychophysicsExperiment(Experiment):
 
         # Setup
         super().__init__(project_root, platform, debug)
-        
         self.exp_type = 'psychophysics'
-        self.parameters = self.load_config('parameters')
-        self.exp_params = self.find_in_configs(self.parameters["Experiment"], "Version", self.version)
-        self.stim_params = self.find_in_configs(self.parameters["Stimuli"], "Version", self.version)
-        
+
+        # Configuration
+        self.exp_params = self.load_config('experiment')
+        self.stim_params = self.load_config('stimuli')
+
+        # Data
         self.subject_info = dict()
         self.init_participants_file()
 

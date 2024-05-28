@@ -1,2 +1,3 @@
 # -*- coding: utf-8 -*-
-from .base import Experiment
+from . import base
+from . import psyphys

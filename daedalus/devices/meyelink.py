@@ -18,26 +18,25 @@
 #                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
-import sys
+from psychopy.tools.monitorunittools import deg2pix
 
 import pylink
-from . import EyeLinkCoreGraphicsPsychoPy
 
 
-class Eyelink:
+class MeyeLink:
 	"""
 	Class for controlling Eyelink 1000 eyetracker
 	"""
-	def __init__(self, trakcer_config, exp_name, exp_window, dummy):
+	def __init__(self, tracker_config, exp_name, exp_window, dummy):
 
   		# Setup
-		self.tracker_config = trakcer_config
+		self.tracker_config = tracker_config
 		self.exp_name = exp_name
 		self.exp_window = exp_window
 		self.dummy = dummy
 
-		# Initialize the Eyelink tracker
-		self.tracker = pylink.getEYELINK()
+		self.tracker = None
+		self.error = None
 
 	def connect(self):
 		"""
@@ -47,32 +46,60 @@ class Eyelink:
 			self.tracker = pylink.EyeLink(None)
 		else:
 			try:
-				self.tracker.open(self.tracker_config["address"])
-			except RuntimeError as e:
-				self.close()
-				raise RuntimeError("Could not connect to the Eyelink tracker", e)
+				self.tracker =  pylink.EyeLink(self.tracker_config["Connection"]["ip_address"])
+			except RuntimeError as err:
+				self.error = err
+				return False
+		return True
 
-	def close(self):
+	def terminate(self, host_file, display_file):
 		"""
 		Close the connection to the Eyelink tracker
 		"""
+		msg = None
 		if self.tracker.isConnected():
-			self.tracker.close()
-		sys.exit()
 
-	def open_file(self):
+			if self.tracker.isRecording():
+				pylink.pumpDelay(100)
+				self.tracker.stopRecording()
+    
+			self.tracker.setOfflineMode()
+
+            # Clear the Host PC screen and wait for 500 ms
+			self.tracker.sendCommand('clear_screen 0')
+			pylink.msecDelay(500)
+
+            # Close the edf data file on the Host
+			self.tracker.closeDataFile()
+
+			# Download the EDF data file from the Host PC to the Display PC
+			try:
+				self.tracker.receiveDataFile(host_file, display_file)
+			except RuntimeError as err:
+				msg = err
+
+			# Close the connection to the Eyelink tracker
+			self.tracker.closeGraphics()
+			self.tracker.close()
+		else:
+			msg = "Eyelink tracker is not connected"
+
+		return msg
+
+	def open_file(self, host_file):
 		"""
-		Open a file to record the data
+		Open a file to record the data and initialize it
 		"""
 		try:
-			self.tracker.openDataFile(self.tracker_config["host_file"])
+			self.tracker.openDataFile(host_file)
 			# Add a header text to the EDF file to identify the current experiment name
 			self.tracker.sendCommand(f"add_file_preamble_text {self.exp_name}")
-		except RuntimeError as e:
-			self.close()
-			raise RuntimeError("Could not open a file to record the data", e)
+			return True
+		except RuntimeError as err:
+			self.error = err
+			return False
 
-	def get_tracker_version(self):
+	def get_version(self):
 		"""
 		Get the version of the Eyelink tracker
 		"""
@@ -85,19 +112,17 @@ class Eyelink:
 		"""
 		# Set the tracker parameters
 		self.tracker.setOfflineMode()
-  
-		# what eye events to save in the EDF file and to make available over the link
-		self.tracker.sendCommand(f"file_event_filter = {self.tracker_config['file_event_filter']}")
-		self.tracker.sendCommand(f"link_event_filter = {self.tracker_config['link_event_filter']}")
-		# what sample data to save in the EDF data file and to make available over the link
-		self.tracker.sendCommand(f"file_sample_data = {self.tracker_config['file_sample_data']}")
-		self.tracker.sendCommand(f"link_sample_data = {self.tracker_config['link_sample_data']}")
-		# set the calibration type and sample rate
-		self.tracker.sendCommand(f"calibration_type = {self.tracker_config['calibration_type']}")
-		self.tracker.sendCommand(f"sample_rate {self.tracker_config['sample_rate']}")
-		# pass the display pixel coordinates (left, top, right, bottom) to the tracker
-		self.tracker.sendCommand(f"screen_pixel_coords = {self.tracker_config['screen_pixel_coords']}")
-		# write a DISPLAY_COORDS message to the EDF file. data Viewer needs this piece of info for proper visualization
+
+		# Set the configuration from the config dict (which is a dictionary of dictionaries	)
+		for config_type, config_dict in self.tracker_config.items():
+			if config_type not in ["Connection", "Extra"]:
+				for key, value in config_dict.items():
+					self.tracker.sendCommand(f"{key} = {value}")
+				
+		# Rest of the setup
+		win_width_idx= self.exp_window.size[0] - 1
+		win_height_idx = self.exp_window.size[1] - 1
+		self.tracker.sendCommnad(f"screen_pixel_coords = 0 0 {win_width_idx} {win_height_idx}")
 		self.tracker.sendMessage(f"DISPLAY_COORDS = {self.tracker_config['display_coords']}")
 
 	def calibrate(self):
@@ -108,7 +133,24 @@ class Eyelink:
 			# Start the calibration
 			self.tracker.doTrackerSetup()
 			self.tracker.sendMessage("tracker_calibrated")
-		except RuntimeError as e:
+			return True
+		except RuntimeError as err:
 			self.tracker.exitCalibration()
-			self.close()
-			raise RuntimeError("Could not calibrate the Eyelink tracker", e)
+			self.error = err
+			return False
+
+	def check_eye(self):
+		"""
+		Check if the eye is being tracked
+		"""
+		used = self.tracker.eyeAvailable()
+		intended = self.tracker_config["Extra"]["active_eye"]
+		if used == 0 and intended == "LEFT":
+			self.tracker.sendMessage("EYE_USED 0 LEFT")
+		elif used == 1 and intended == "RIGHT":
+			self.tracker.sendMessage("EYE_USED 1 RIGHT")
+		elif used == 2 and intended == "BINOCULAR":
+			self.tracker.sendMessage("EYE_USED 2 BINOCULAR")
+		else:
+			return False
+		return True

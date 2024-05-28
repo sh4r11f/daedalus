@@ -24,62 +24,70 @@ import numpy as np
 import pandas as pd
 
 import pylink
+from psychopy.tools.monitorunittools import deg2pix
 
-from .psyphy import PsychophysicsExperiment
+from daedalus.devices.meyelink import Meyelink
+from .psyphy import Psychophysics
+from EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
 
 
-class EyetrackingExperiment(PsychophysicsExperiment):
+class Eyetracking(Psychophysics):
     """
-    Main template for eye tracking experiments running on the Eyelink1000 Plus. It mostly adds functionality for
-    communicating and controlling the Eyelink. Other than that, it pretty much implements all its parents methods.
-
-    Most of the code in the methods are from examples in Pylink docs.
-
-    Parameters
-    ----------
-    debug : bool
-        Debug mode for the experiment.
-
-    dummy_tracker : bool
-        Debug mode for the eye tracker.
-
-    root_dir : str or Path
-        Home directory of the experiment.
     """
     def __init__(self, project_root: Union[str, Path], platform: str, debug: bool):
 
         # Setup
         super().__init__(project_root, platform, debug)
+        self.exp_type = "eyetracking"
+        self.tracker_model = "Eyelink1000Plus"
 
+        # Parameters
+        self.tracker_params = self.load_config("eyetracker")[self.tracker_model]
+
+        # Window
         # Eye tracking experiments always use pixel measurements.
         self.window.units = 'pix'
         # NOTE: If we don't do this early, the eyetracker will override it and we always get a grey background.
-        self.window.color = self.exp_params["Environment"]["background_color"]
+        self.window.color = self.exp_params["General"]["background_color"]
 
-        # Add Eyelink-specific .edf files' paths and names
-        self.files["edf_host"] = f"{self.NAME}{self._SUBJECT['id']:02d}.edf"
+        # Eyelink-specific .edf files
+        self.files["edf_host"] = f"{self.name}{self._SUBJECT['id']:02d}.edf"
 
         # Initialize the eye tracker
-        self.el_tracker = pylink.getEYELINK()
+        self.eyelink = Meyelink(self.tracker_params, self.name, self.window, self.debug)
 
-        # Connect and configure the tracker
+    def calibrate_eyelink(self):
+        """
+        Calibrates the Eyelink 1000
+        """
+        # Connect to the tracker
         self.connect_tracker()
-        self.open_tracker_file()
-        self.configure_tracker()
+
+        # Configure the tracker
+        self.eyelink.confiugre()
+
+        # Setup calibration
         self.setup_calibration()
 
-    def calibrate_tracker(self):
+        # Open the EDF file
+        self.open_eyelink_file()
+
+        # Start calibration
+        calibrated = self.eyelink.calibrate()
+        if not calibrated:
+            self.logger.critical(f'Error in calibrating the Eyelink: {self.eyelink.error}')
+            self.goodbye()
+
+    def setup_calibration(self):
         """
 		Calibrate the Eyelink 1000
 		"""
   		# Configure a graphics environment (genv) for tracker calibration
-        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker, self.window)
+        genv = EyeLinkCoreGraphicsPsychoPy(self.eyelink, self.window)
 
 		# Set background and foreground colors for the calibration target
-		# in PsychoPy, (-1, -1, -1)=black, (1, 1, 1)=white, (0, 0, 0)=mid-gray
-        foreground_color = (1, 1, 1)
-        background_color = self.params["BG_COLOR"]
-		# background_color = (-1, -1, -1)
+        foreground_color = self.tracker_params["Calibration"]["target_color"]
+        background_color = self.tracker_params["Calibration"]["background_color"]
         genv.setCalibrationColors(foreground_color, background_color)
 
 		# Set up the calibration target
@@ -88,7 +96,8 @@ class EyetrackingExperiment(PsychophysicsExperiment):
 
 		# Configure the size of the calibration target (in pixels)
 		# this option applies only to "circle" and "spiral" targets
-        genv.setTargetSize(24)
+        target_size = deg2pix(float(self.tracker_params["Calibration"]["target_size"]), self.monitor)
+        genv.setTargetSize(target_size)
 
 		# Beeps to play during calibration, validation and drift correction
 		# parameters: target, good, error
@@ -100,184 +109,24 @@ class EyetrackingExperiment(PsychophysicsExperiment):
 
 		# Request Pylink to use the PsychoPy window we opened above for calibration
         pylink.openGraphicsEx(genv)
-		# Start the calibration
-        self.tracker.doTrackerSetup()
   
     def connect_tracker(self):
         """
         Connects to an Eyelink 1000 using its python API (pylink).
         """
-        # Initiate connection (only if not in dummy mode)
-        if self.debug:
-            self.el_tracker = pylink.EyeLink(None)
-        else:
-            # IP: 100.1.1.1
-            try:
-                self.el_tracker = pylink.EyeLink("100.1.1.1")
-                self.logger.info("Tracker connected.")
-            except RuntimeError as err:
-                self.logger.critical(f'Error in connecting to the Eyelink: {err}')
-                self.end()
+        connection = self.eyelink.connect()
+        if not connection:
+            self.logger.critical(f'Error in connecting to the Eyelink: {self.eyelink.error}')
+            self.goodbye()
 
-    def open_tracker_file(self):
+    def open_eyelink_file(self):
         """
         Creates an edf file on the host Eyelink computer to record the data
         """
-        # Open an EDF data file on the Host PC
-        try:
-            self.el_tracker.openDataFile(self.files["edf_host"])
-            logging.exp("Tracker file created.")
-            # Add a header text to the EDF file to identify the current experiment name
-            self.el_tracker.sendCommand(f"add_file_preamble_text {self.NAME}")
-
-        except RuntimeError as err:
-            logging.error('Error in creating the EDF file:', err)
-
-            # close the link if we have one open
-            if self.el_tracker.isConnected():
-                self.el_tracker.close()
-
-            # quit the experiment
-            self.end()
-
-    def configure_tracker(self):
-        """
-        Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
-        e.g., sample rate and calibration type.
-        """
-        # Put the tracker in offline mode before we change tracking parameters
-        self.el_tracker.setOfflineMode()
-
-        # Get the software version:  1-EyeLink I, 2-EyeLink II, 3/4-EyeLink 1000, 5-EyeLink 1000 Plus, 6-Portable DUO
-        eyelink_ver = 0  # set version to 0, in case running in Dummy mode
-        if not self.DUMMY:
-            vstr = self.el_tracker.getTrackerVersionString()
-            eyelink_ver = int(vstr.split()[-1].split('.')[0])
-            # print out some version info in the shell
-            msg = f'Running experiment on {vstr}, version {eyelink_ver}'
-            logging.info(msg)
-
-        # File and Link data control
-        # what eye events to save in the EDF file, include everything by default
-        file_event_flags = 'LEFT,RIGHT,FIXATION,SACCADE,BLINK,MESSAGE,BUTTON,INPUT'
-
-        # what eye events to make available over the link, include everything by default
-        link_event_flags = 'LEFT,RIGHT,FIXATION,SACCADE,BLINK,BUTTON,FIXUPDATE,INPUT'
-
-        # what sample data to save in the EDF data file and to make available
-        # over the link, include the 'HTARGET' flag to save head target sticker
-        # data for supported eye trackers
-        if eyelink_ver > 3:
-            file_sample_flags = 'LEFT,RIGHT,GAZE,HREF,RAW,AREA,HTARGET,GAZERES,BUTTON,STATUS,INPUT'
-            link_sample_flags = 'LEFT,RIGHT,GAZE,GAZERES,AREA,HTARGET,STATUS,INPUT'
-        else:
-            file_sample_flags = 'LEFT,RIGHT,GAZE,HREF,RAW,AREA,GAZERES,BUTTON,STATUS,INPUT'
-            link_sample_flags = 'LEFT,RIGHT,GAZE,GAZERES,AREA,STATUS,INPUT'
-
-        # Send the parameters to the tracker
-        self.el_tracker.sendCommand(f"file_event_filter = {file_event_flags}")
-        self.el_tracker.sendCommand(f"file_sample_data = {file_sample_flags}")
-        self.el_tracker.sendCommand(f"link_event_filter = {link_event_flags}")
-        self.el_tracker.sendCommand(f"link_sample_data = {link_sample_flags}")
-
-        # Optional tracking parameters
-        # Sample rate, 250, 500, 1000, or 2000, check your tracker specification
-        self.el_tracker.sendCommand("sample_rate 1000")
-
-        # Choose a calibration type, H3, HV3, HV5, HV13 (HV = horizontal/vertical),
-        if self.DEBUG:
-            self.el_tracker.sendCommand("calibration_type = HV3")
-        else:
-            self.el_tracker.sendCommand("calibration_type = HV5")
-
-        # Log
-        logging.exp("Tracker configured.")
-
-    def setup_calibration(self):
-        """
-        Prepares the Eyelink for calibration procedure.
-        This includes setting the correct coordinates for the tracker and creating a graphics environment for
-        calibration.
-        """
-        # get the native screen resolution used by PsychoPy
-        scn_width, scn_height = self.window.size
-
-        # Pass the display pixel coordinates (left, top, right, bottom) to the tracker
-        # see the EyeLink Installation Guide, "Customizing Screen Settings"
-        el_coords = f"screen_pixel_coords = 0 0 {scn_width - 1} {scn_height - 1}"
-        self.el_tracker.sendCommand(el_coords)
-
-        # Write a DISPLAY_COORDS message to the EDF file
-        # Data Viewer needs this piece of info for proper visualization, see Data
-        # Viewer User Manual, "Protocol for EyeLink Data to Viewer Integration"
-        dv_coords = f"DISPLAY_COORDS  0 0 {scn_width - 1} {scn_height - 1}"
-        self.el_tracker.sendMessage(dv_coords)
-
-        # Configure a graphics environment (genv) for tracker calibration
-        genv = EyeLinkCoreGraphicsPsychoPy(self.el_tracker, self.window)
-        msg = f"Version number of the CoreGraphics library: {genv}"
-        logging.info(msg)
-
-        # Set background and foreground colors for the calibration target
-        # in PsychoPy, (-1, -1, -1)=black, (1, 1, 1)=white, (0, 0, 0)=mid-gray
-        foreground_color = (1, 1, 1)
-        background_color = self.params["BG_COLOR"]
-        # background_color = (-1, -1, -1)
-        genv.setCalibrationColors(foreground_color, background_color)
-
-        # Set up the calibration target
-        # Use the default calibration target ('circle')
-        genv.setTargetType('circle')
-
-        # Configure the size of the calibration target (in pixels)
-        # this option applies only to "circle" and "spiral" targets
-        genv.setTargetSize(24)
-
-        # Beeps to play during calibration, validation and drift correction
-        # parameters: target, good, error
-        #     target -- sound to play when target moves
-        #     good -- sound to play on successful operation
-        #     error -- sound to play on failure or interruption
-        # Each parameter could be ''--default sound, 'off'--no sound, or a wav file
-        genv.setCalibrationSounds('', '', '')
-
-        # Request Pylink to use the PsychoPy window we opened above for calibration
-        pylink.openGraphicsEx(genv)
-
-    def get_eye(self) -> int:
-        """
-        Checks if the tracker can find an eye, and whether that eye is the same as the one specified in the
-        parameters file of the experiment.
-
-        Returns
-        -------
-        int
-            The eye used for the experiment: 0 is left and 1 is right.
-        """
-        # Get the eye info from tracker
-        eye_used = self.el_tracker.eyeAvailable()
-
-        # Get the eye info from parameters file
-        eye_intend = int(self.params["EYE"])
-
-        # Check the right eye
-        if eye_used == 1 and eye_used == eye_intend:
-            logging.info("Tracker using the right eye.")
-            self.el_tracker.sendMessage("EYE_USED 1 RIGHT")
-
-        # Check the left eye or detecting both eyes
-        elif eye_used == 0 or eye_used == 2:
-            eye_used = 0  # use the left eye only
-            logging.info("Tracker using the left eye.")
-            self.el_tracker.sendMessage("EYE_USED 0 LEFT")
-
-        # If there is invalid eye
-        else:
-            msg = 'Error in getting eye information. Recalibrate the tracker.'
-            logging.warning(msg)
-            self.show_msg(msg)
-
-        return eye_used
+        opened = self.eyelink.open_file(self.files["edf_host"])
+        if not opened:
+            self.logger.critical(f'Error in opening the EDF file: {self.eyelink.error}')
+            self.goodbye()
 
     def check_gaze(self, old_sample, fix_pos: Union[List, Tuple]):
         """

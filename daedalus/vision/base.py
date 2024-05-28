@@ -17,6 +17,7 @@
 #                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
+import sys
 import yaml
 from pathlib import Path
 from typing import Dict, Union, Tuple
@@ -354,7 +355,7 @@ class Experiment:
             # Ctrl + C quits the experiment. Resume otherwise.
             pressed = event.waitKeys(modifiers=True)
             if (pressed[0] == 'c') and pressed[1]['ctrl']:
-                self.end()
+                self.goodbye()
         else:
             core.wait(wait_time)
 
@@ -368,6 +369,7 @@ class Experiment:
         self.logger.info("Bye bye experiment.")
         self.window.close()
         core.quit()
+        sys.exit()
 
     def enable_force_quit(self, key_press: str = 'escape'):
         """
@@ -384,7 +386,7 @@ class Experiment:
         # Check if it's the quit key
         if key_press in pressed:
             self.logger.critical("Force quitting...")
-            self.end()
+            self.goodbye()
 
     def check_frame_durations(self, frame_intervals: Union[list, np.array]):
         """
