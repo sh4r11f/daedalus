@@ -40,6 +40,7 @@ class MyeLink:
         self.dummy = dummy
 
         self.eyelink = None
+        self.tracked_eye = None
         self.error = None
 
     def connect(self):
@@ -112,7 +113,7 @@ class MyeLink:
         """
         return self.eyelink.getTrackerVersion()
 
-    def configure(self):
+    def configure_init(self):
         """
         Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
         e.g., sample rate and calibration type.
@@ -148,7 +149,7 @@ class MyeLink:
             except RuntimeError as err:
                 self.eyelink.exitCalibration()
                 self.error = err
-        
+
         return success
 
     def check_eye(self, log=False):
@@ -165,81 +166,366 @@ class MyeLink:
         available = self.eyelink.eyeAvailable()
         intended = self.tracker_config["General"]["active_eye"]
 
-        if ((available == 0 and intended == "LEFT") or
-            (available == 1 and intended == "RIGHT") or
-            (available == 2 and intended == "BINOCULAR")):
+        if (
+            (available == 0 and intended == "LEFT") or 
+            (available == 1 and intended == "RIGHT") or 
+            (available == 2 and intended == "BINOCULAR")
+        ):
             if log:
                 self.eyelink.sendMessage(f"EYE_USED {available} {intended}")
+            self.tracked_eye = available
             success = True
         else:
             self.error = f"Bad Eye. Available: {available}, Intended: {intended}"
 
         return success
 
-    def get_eye_gaze_pos(self, tracked_eye, sample):
+    def get_eye_gaze_pos(self, sample):
         """
         Get the eye sample from the Eyelink tracker
         """
-        if tracked_eye == 0 and sample.isLeftSample():
+        if self.tracked_eye == 0 and sample.isLeftSample():
             g_x, g_y = sample.getLeftEye().getGaze()
-        elif tracked_eye == 1 and sample.isRightSample():
+        elif self.tracked_eye == 1 and sample.isRightSample():
             g_x, g_y = sample.getRightEye().getGaze()
         else:
             g_x, g_y = None, None
 
         return g_x, g_y
 
-    def check_fixation(self, target_pos, valid_dist, prev_sample):
+    def online_event_monitor(self, event_list=None):
         """
-        Function to monitor gaze on a static point, like a fixation cross.
+        Find an event in the Eyelink tracker
+        """
+        if event_list is None:
+            event_list = {
+                "fixation_start": pylink.STARTFIX,
+                "fixation_end": pylink.ENDFIX,
+                "fixation_update": pylink.FIXUPDATE,
+                "saccade_start": pylink.STARTSACC,
+                "saccade_end": pylink.ENDSACC
+            }
 
-        The point of this function is to allow for checking fixation on every `n` frame(s).
-        (n is controlled by the experiment script).
+        info = {key: None for key in event_list.keys()}
+
+        while True:
+            event = self.eyelink.getNextData()
+
+            if not event:
+                break
+
+            data = self.eyelink.getFloatData()
+            if self.tracked_eye == data.getEye():
+                if event == event_list["fixation_start"]:
+                    info["fixatoin_start"] = self.detect_fixation_start_event(data)
+                elif event == event_list["fixation_end"]:
+                    info["fixation_end"] = self.detect_fixation_end_event(data)
+                elif event == event_list["fixation_update"]:
+                    info["fixation_update"] = self.detect_fixation_update_event(data)
+                elif event == event_list["saccade_start"]:
+                    info["saccade_start"] = self.detect_saccade_start_event(data)
+                elif event == event_list["saccade_end"]:
+                    info["saccade_end"] = self.detect_saccade_end_event(data)
+                else:
+                    pass
+
+        return info
+
+    def detect_fixation_start_event(self, data):
+        """
+        Process the fixation start event
+        """
+        time = data.getStartTime()
+        gaze_x, gaze_y = data.getStartGaze()
+        ppd_x, ppd_y = data.getStartPPD()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def detect_fixation_end_event(self, data):
+        """
+        Process the fixation end event
+        """
+        time = data.getEndTime()
+        gaze_x, gaze_y = data.getEndGaze()
+        ppd_x, ppd_y = data.getEndPPD()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def detect_fixation_update_event(self, data):
+        """
+        Process the fixation update event
+        """
+        time = data.getTime()
+        gaze_x, gaze_y = data.getAverageGaze()
+        ppd_start_x, ppd_start_y = data.getStartPPD()
+        ppd_end_x, ppd_end_y = data.getEndPPD()
+        ppd_x = (ppd_start_x + ppd_end_x) / 2
+        ppd_y = (ppd_start_y + ppd_end_y) / 2
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def detect_saccade_start_event(self, data):
+        """
+        Process the saccade start event
+        """
+        time = data.getStartTime()
+        gaze_x, gaze_y = data.getStartGaze()
+        ppd_x, ppd_y = data.getStartPPD()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def detect_saccade_end_event(self, data):
+        """
+        Process the saccade end event
+        """
+        time = data.getEndTime()
+        gaze_x, gaze_y = data.getEndGaze()
+        ppd_x, ppd_y = data.getEndPPD()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def online_sample_processor(self, event_list=None):
+        """
+        Process samples for each event in the link buffer (typically called at the end of each trial)
 
         Args:
-            target_pos (tuple): The position of the fixation point.
-            valid_dist (float): The radius of the gaze region in degrees.
-            prev_sample (pylink.Sample): The previous sample.
-
-        Returns:
-            tuple:
-                pylink.Sample: The new sample.
-                dict: The fixation information containing gaze position, fixation status, and offset.
+            event_list (dict): A dictionary of events to process.
         """
-        # Get the eye information
-        if self.check_eye:
-            tracked_eye = self.eyelink.eyeAvailable()
+        if event_list is None:
+            event_list = {
+                "fixation_start": pylink.STARTFIX,
+                "fixation_end": pylink.ENDFIX,
+                "fixation_update": pylink.FIXUPDATE,
+                "saccade_start": pylink.STARTSACC,
+                "saccade_end": pylink.ENDSACC,
+                "blink_start": pylink.STARTBLINK,
+                "blink_end": pylink.ENDBLINK
+            }
 
-        # Define hit region
-        valid_radius = deg2pix(valid_dist, self.monitor)
-        target_x, target_y = target_pos
-        fixation_info = None
+        info = {key: None for key in event_list.keys()}
+        while True:
+            event = self.eyelink.getNextData()
 
-        # Look at the buffer
-        current_sample = self.eyelink.getNewestSample()
-        if current_sample is not None:
-            if (prev_sample is None) or (current_sample.getTime() != prev_sample.getTime()):
-                # check if the new sample has data for the eye
-                # currently being tracked; if so, we retrieve the current
-                # gaze position and PPD (how many pixels correspond to 1
-                # deg of visual angle, at the current gaze position)
-                gaze_x, gaze_y = self.get_eye_gaze_pos(tracked_eye, current_sample)
-                if (gaze_x is not None) and (gaze_y is not None):
-                    # See if the current gaze position is in a region around the screen centered
-                    offset = get_hypot(target_x, target_y, gaze_x, gaze_y)
-                    fixating = offset < valid_radius
+            if not event:
+                break
 
-                    # Save the fixation information
-                    fixation_info = {
-                        "gaze_x": gaze_x,
-                        "gaze_y": gaze_y,
-                        "fixating": fixating,
-                        "offset": offset
+            data = self.eyelink.getFloatData()
+            if self.tracked_eye == data.getEye():
+                if event == event_list["fixation_start"]:
+                    info["fixation_start"] = self.fixation_start_event(data)
+                elif event == event_list["fixation_end"]:
+                    info["fixation_end"] = self.fixation_end_event(data)
+                elif event == event_list["fixation_update"]:
+                    info["fixation_update"] = self.fixation_update_event(data)
+                elif event == event_list["saccade_start"]:
+                    info["saccade_start"] = self.saccade_start_event(data)
+                elif event == event_list["saccade_end"]:
+                    info["saccade_end"] = self.saccade_end_event(data)
+                else:
+                    pass
+
+        return info
+
+    def process_fixation_start_event(self, data):
+        """
+        Process the fixation start event
+        """
+        time = data.getStartTime()
+        gaze_x, gaze_y = data.getStartGaze()
+        ppd_x, ppd_y = data.getStartPPD()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y
+        }
+
+    def fixation_wait_event(self):
+        """
+        Method to detect fixation from the Eyelink over link.
+        """
+        info = None
+
+        # Pump events until a fixation event is detected
+        while True:
+
+            # Get the event and break if no event is left/detected
+            event = self.eyelink.getNextData()
+            if not event:
+                break
+
+            # Check for fixation start event
+            if event == pylink.STARTFIX:
+
+                # Get the data
+                data = self.eyelink.getFloatData()
+
+                # Check eye and save data
+                if self.tracked_eye == data.getEye():
+                    time_fix = data.getTime()
+                    time_offset = self.eyelink.trackerTimeOffset()
+                    gaze_x, gaze_y = data.getStartGaze()
+                    ppd_x, ppd_y = data.getStartPPD()
+
+                    self.eyelink.sendMessage(f"FixStartTime_{time_fix}")
+                    self.eyelink.sendMessage(f"FixStartGaze_{gaze_x}_{gaze_y}")
+                    self.eyelink.sendMessage(f"FixStartPPD_{ppd_x}_{ppd_y}")
+
+                    info = {
+                        "time": time_fix,
+                        "time_offset": time_offset,
+                        "gaze": (gaze_x, gaze_y),
+                        "ppd": (ppd_x, ppd_y)
                     }
 
-        return current_sample, fixation_info
+                    break
 
-    def wait_for_fixation(self, target_pos, valid_dist, min_gaze_dur, clock):
+        return info
+
+    def fixation_monitor_event(self):
+        """
+        Method to monitor fixation from the Eyelink over link.
+        """
+        info = None
+
+        # Pump events until a fixation update event is detected
+        while True:
+
+            # Get the event and break if no event is left/detected
+            event = self.eyelink.getNextData()
+            if not event:
+                break
+
+            # Check for fixation start event
+            if event == pylink.FIXUPDATE:
+
+                # Get the data
+                data = self.eyelink.getFloatData()
+
+                # Check eye and save data
+                if self.tracked_eye == data.getEye():
+                    time_fix = data.getTime()
+                    time_offset = self.eyelink.trackerTimeOffset()
+                    gaze_avg_x, gaze_avg_y = data.getAverageGaze()
+                    ppd_start_x, ppd_start_y = data.getStartPPD()
+                    ppd_end_x, ppd_end_y = data.getEndPPD()
+                    ppd_avg_x = (ppd_start_x + ppd_end_x) / 2
+                    ppd_avg_y = (ppd_start_y + ppd_end_y) / 2
+
+                    self.eyelink.sendMessage(f"FixStartTime_{time_fix}")
+                    self.eyelink.sendMessage(f"FixStartGaze_{gaze_x}_{gaze_y}")
+                    self.eyelink.sendMessage(f"FixStartPPD_{ppd_x}_{ppd_y}")
+
+                    info = {
+                        "time": time_fix,
+                        "time_offset": time_offset,
+                        "gaze": (gaze_x, gaze_y),
+                        "ppd": (ppd_x, ppd_y)
+                    }
+
+                    break
+
+        return info
+
+    def saccade_detect_event(self):
+        """
+        Method to detect saccade from the Eyelink over link.
+        """
+        info = {"saccade_start": None, "saccade_end": None}
+
+        # Pump events until a saccade event is detected
+        while True:
+
+            # Get the event and break if no event is left/detected
+            event = self.eyelink.getNextData()
+            if not event:
+                break
+
+            # Check for saccade start event
+            if event == pylink.STARTSACC:
+
+                # Get the data
+                data = self.eyelink.getFloatData()
+
+                # Check eye and save data
+                if self.tracked_eye == data.getEye():
+                    time = data.getTime()
+                    time_offset = self.eyelink.trackerTimeOffset()
+                    gaze_x, gaze_y = data.getStartGaze()
+                    ppd_x, ppd_y = data.getStartPPD()
+                    velocity = data.getStartVelocity()
+
+                    self.eyelink.sendMessage(f"SacStartTime_{time}")
+                    self.eyelink.sendMessage(f"SacStartGaze_{gaze_x}_{gaze_y}")
+                    self.eyelink.sendMessage(f"SacStartPPD_{ppd_x}_{ppd_y}")
+                    self.eyelink.sendMessage(f"SacStartVel_{velocity}")
+
+                    info["saccade_start"] = {
+                        "time": time,
+                        "saccade_start_gaze": (gaze_x, gaze_y),
+                        "saccade_start_ppd": (ppd_x, ppd_y),
+                        "saccade_start_velocity": velocity
+                    }
+
+            # Check for saccade end event
+            elif event == pylink.ENDSACC:
+
+                # Get the data
+                data = self.eyelink.getFloatData()
+
+                # Check eye and save data
+                if self.tracked_eye == data.getEye():
+                    start_gaze_x, start_gaze_y = data.getStartGaze()
+                    end_gaze_x, end_gaze_y = data.getEndGaze()
+                    ppd_x, ppd_y = data.getPPD()
+                    start_time = data.getStartTime()
+                    end_time = data.getEndTime()
+                    time = data.getTime()
+                    self.eyelink.sendMessage(f"FixStartTime_{time}")
+                    info = {"time": time}
+                    self.eyelink.sendMessage(f"FixStartGaze_{gaze_x}_{gaze_y}")
+                    self.eyelink.sendMessage(f"FixStartPPD_{ppd_x}_{ppd_y}")
+                    info["fixation_start_gaze"]["x"] = gaze_x
+                    info["fixation_start_gaze"]["y"] = gaze_y
+                    info["fixation_start_ppd"]["x"] = ppd_x
+                    info["fixation_start_ppd"]["y"] = ppd_y
+                    break
+
+        return info
+
+    def fixation_wait_realtime(self, target_pos, valid_dist, min_gaze_dur, clock):
         """
         Runs a while loop and keeps it running until gaze on some region is established.
 
@@ -299,7 +585,53 @@ class MyeLink:
 
         return trigger
 
-    def check_saccade(
+    def fixation_monitor_realtime(self, target_pos, valid_dist, prev_sample):
+        """
+        Function to monitor gaze on a static point, like a fixation cross.
+
+        The point of this function is to allow for checking fixation on every `n` frame(s).
+        (n is controlled by the experiment script).
+
+        Args:
+            target_pos (tuple): The position of the fixation point.
+            valid_dist (float): The radius of the gaze region in degrees.
+            prev_sample (pylink.Sample): The previous sample.
+
+        Returns:
+            tuple:
+                pylink.Sample: The new sample.
+                dict: The fixation information containing gaze position, fixation status, and offset.
+        """
+        # Define hit region
+        valid_radius = deg2pix(valid_dist, self.monitor)
+        target_x, target_y = target_pos
+        fixation_info = None
+
+        # Look at the buffer
+        current_sample = self.eyelink.getNewestSample()
+        if current_sample is not None:
+            if (prev_sample is None) or (current_sample.getTime() != prev_sample.getTime()):
+                # check if the new sample has data for the eye
+                # currently being tracked; if so, we retrieve the current
+                # gaze position and PPD (how many pixels correspond to 1
+                # deg of visual angle, at the current gaze position)
+                gaze_x, gaze_y = self.get_eye_gaze_pos(tracked_eye, current_sample)
+                if (gaze_x is not None) and (gaze_y is not None):
+                    # See if the current gaze position is in a region around the screen centered
+                    offset = get_hypot(target_x, target_y, gaze_x, gaze_y)
+                    fixating = offset < valid_radius
+
+                    # Save the fixation information
+                    fixation_info = {
+                        "gaze_x": gaze_x,
+                        "gaze_y": gaze_y,
+                        "fixating": fixating,
+                        "offset": offset
+                    }
+
+        return current_sample, fixation_info
+
+    def saccade_detect_realtime(
         self,
         target_onset: float,
         target_pos: Union[List, Tuple],
