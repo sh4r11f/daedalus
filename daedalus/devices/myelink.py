@@ -314,97 +314,191 @@ class MyeLink:
             "ppd_y": ppd_y
         }
 
-    def online_sample_processor(self, event_list=None):
+    def online_event_processor(self, event_type: str):
+        """
+        Process the events in the Eyelink tracker
+
+        Args:
+            event_type (str): The type of event to process.
+        """
+        info = []
+        prev_sample = None
+
+        while True:
+            buffer_item = self.eyelink.getNextData()
+            if not buffer_item:
+                break
+
+            if buffer_item == pylink.FIXSTART:
+                if prev_sample is None or buffer_item.getTime() != prev_sample.getTime():
+                    prev_sample = buffer_item
+                    if self.tracked_eye == "RIGHT_EYE" and buffer_item.isRightSample():
+                        data = buffer_item.getRightEye()
+                    elif self.tracked_eye == "LEFT_EYE" and buffer_item.isLeftSample():
+                        data = buffer_item.getLeftEye()
+
+                    if event_type == "fixation":
+                        info.append(self.process_fixation_samples(data))
+                    elif event_type == "saccade":
+                        info.append(self.process_saccade_samples(data))
+                    else:
+                        raise NotImplementedError(f"Event type {event_type} is not implemented.")
+
+        return info
+
+    def process_fixation_end_event(self, event_data):
+        """
+        Process the fixation end event
+
+        Args:
+            event_data (pylink.Data): The fixation end event data.
+
+        Returns:
+            dict: The processed fixation end event data.
+        """
+        time_start = event_data.getStartTime()
+        time_end = event_data.getEndTime()
+        duration = time_end - time_start
+
+        gaze_start_x, gaze_start_y = event_data.getStartGaze()
+        gaze_end_x, gaze_end_y = event_data.getEndGaze()
+        gaze_avg_x, gaze_avg_y = event_data.getAverageGaze()
+
+        ppd_start_x, ppd_start_y = event_data.getStartPPD()
+        ppd_end_x, ppd_end_y = event_data.getEndPPD()
+        ppd_avg = (ppd_start_x + ppd_end_x) / 2, (ppd_start_y + ppd_end_y) / 2
+
+        pupil_start = event_data.getStartPupilSize()
+        pupil_end = event_data.getEndPupilSize()
+        pupil_avg = event_data.getAveragePupilSize()
+
+        return {
+            "time_start": time_start,
+            "time_end": time_end,
+            "duration": duration,
+            "gaze_start": (gaze_start_x, gaze_start_y),
+            "gaze_end": (gaze_end_x, gaze_end_y),
+            "gaze_avg": (gaze_avg_x, gaze_avg_y),
+            "ppd_start": (ppd_start_x, ppd_start_y),
+            "ppd_end": (ppd_end_x, ppd_end_y),
+            "ppd_avg": ppd_avg,
+            "pupil_start": pupil_start,
+            "pupil_end": pupil_end,
+            "pupil_avg": pupil_avg
+        }
+
+    def process_saccade_end_event(self, event_data):
+        """
+        Process the saccade end event
+
+        Args:
+            event_data (pylink.Data): The saccade end event data.
+
+        Returns:
+            dict: The processed saccade end event data.
+        """
+        time_start = event_data.getStartTime()
+        time_end = event_data.getEndTime()
+        duration = time_end - time_start
+
+        gaze_start_x, gaze_start_y = event_data.getStartGaze()
+        gaze_end_x, gaze_end_y = event_data.getEndGaze()
+
+        ppd_start_x, ppd_start_y = event_data.getStartPPD()
+        ppd_end_x, ppd_end_y = event_data.getEndPPD()
+
+        velocity_start = event_data.getStartVelocity()
+        velocity_end = event_data.getEndVelocity()
+        velocity_avg = event_data.getAverageVelocity()
+        velocity_peak = event_data.getPeakVelocity()
+
+        amplitude = event_data.getAmplitude()
+        angle = event_data.getAngle()
+
+        return {
+            "time_start": time_start,
+            "time_end": time_end,
+            "duration": duration,
+            "gaze_start": (gaze_start_x, gaze_start_y),
+            "gaze_end": (gaze_end_x, gaze_end_y),
+            "ppd_start": (ppd_start_x, ppd_start_y),
+            "ppd_end": (ppd_end_x, ppd_end_y),
+            "velocity_start": velocity_start,
+            "velocity_end": velocity_end,
+            "velocity_avg": velocity_avg,
+            "velocity_peak": velocity_peak,
+            "amplitude": amplitude,
+            "angle": angle
+        }
+
+    def online_sample_processor(self, event_type: str):
         """
         Process samples for each event in the link buffer (typically called at the end of each trial)
 
         Args:
-            event_list (dict): A dictionary of events to process.
+            event_type (str): The type of event to process.
         """
-        if event_list is None:
-            event_list = {
-                "fixation_start": pylink.STARTFIX,
-                "fixation_end": pylink.ENDFIX,
-                "fixation_update": pylink.FIXUPDATE,
-                "saccade_start": pylink.STARTSACC,
-                "saccade_end": pylink.ENDSACC,
-                "blink_start": pylink.STARTBLINK,
-                "blink_end": pylink.ENDBLINK
-            }
-
-        info = {key: None for key in event_list.keys()}
+        info = []
+        prev_sample = None
+        
         while True:
-            event = self.eyelink.getNextData()
-
-            if not event:
+            buffer_item = self.eyelink.getNextData()
+            if not buffer_item:
                 break
 
-            data = self.eyelink.getFloatData()
-            if self.tracked_eye == data.getEye():
-                if event == event_list["fixation_start"]:
-                    info["fixation_start"] = self.fixation_start_event(data)
-                elif event == event_list["fixation_end"]:
-                    info["fixation_end"] = self.fixation_end_event(data)
-                elif event == event_list["fixation_update"]:
-                    info["fixation_update"] = self.fixation_update_event(data)
-                elif event == event_list["saccade_start"]:
-                    info["saccade_start"] = self.saccade_start_event(data)
-                elif event == event_list["saccade_end"]:
-                    info["saccade_end"] = self.saccade_end_event(data)
-                else:
-                    pass
+            if buffer_item is not None and buffer_item.getType() == pylink.SAMPLE_TYPE:
+                if prev_sample is None or buffer_item.getTime() != prev_sample.getTime():
+                    prev_sample = buffer_item
+                    if self.tracked_eye == "RIGHT_EYE" and buffer_item.isRightSample():
+                        data = buffer_item.getRightEye()
+                    elif self.tracked_eye == "LEFT_EYE" and buffer_item.isLeftSample():
+                        data = buffer_item.getLeftEye()
+
+                    if event_type == "fixation":
+                        info.append(self.process_fixation_samples(data))
+                    elif event_type == "saccade":
+                        info.append(self.process_saccade_samples(data))
+                    else:
+                        raise NotImplementedError(f"Event type {event_type} is not implemented.")
 
         return info
 
-    def process_fixation_samples(self, data):
+    def process_fixation_samples(self, sample):
         """
         Process the fixation start event
         """
-        prev_sample = None
-        while True:
-            sample = self.eyelink.getNextData()
-            if not sample:
-                break
-            
-            if sample == pylink.STARTFIX:
-                
-            if sample is not None:
-                if (prev_sample is None) or (sample.getTime() != prev_sample.getTime()):
-                    
-                    prev_sample = sample
-                    if self.tracked_eye == "RIGHT_EYE" and sample.isRightSample():
-                        data = sample.getRightEye()
-                    elif self.tracked_eye == "LEFT_EYE" and sample.isLeftSample():
-                        data = sample.getLeftEye()
-                    
-                    # Get the sample info
-                    time = sample.getTime()
-                    gaze_x, gaze_y = data.getGaze()
-                    ppd_x, ppd_y = data.getPPD()
-                    pupil_size = data.getPupilSize()
-
-                    if (gaze_x is not None) and (gaze_y is not None):
-                        break
-                data = self.eyelink.getFloatData()
-                if self.tracked_eye == data.getEye():
-                    if event == pylink.STARTFIX:
-                        info = self.fixation_start_event(data)
-                    elif event == pylink.ENDFIX:
-                        info = self.fixation_end_event(data)
-                    elif event == pylink.FIXUPDATE:
-                        info = self.fixation_update_event(data)
-                    else:
-                        pass
-        time = data.getStartTime()
-        gaze_x, gaze_y = data.getStartGaze()
-        ppd_x, ppd_y = data.getStartPPD()
+        # Get the sample info
+        time = sample.getTime()
+        gaze_x, gaze_y = sample.getGaze()
+        ppd_x, ppd_y = sample.getPPD()
+        pupil_size = sample.getPupilSize()
 
         return {
             "time": time,
             "gaze_x": gaze_x,
             "gaze_y": gaze_y,
             "ppd_x": ppd_x,
-            "ppd_y": ppd_y
+            "ppd_y": ppd_y,
+            "pupil_size": pupil_size
+        }
+
+    def process_saccade_samples(self, sample):
+        """
+        Process the saccade start event
+        """
+        # Get the sample info
+        time = sample.getTime()
+        gaze_x, gaze_y = sample.getGaze()
+        ppd_x, ppd_y = sample.getPPD()
+        velocity = sample.getVelocity()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y,
+            "velocity": velocity
         }
 
     def fixation_wait_event(self):
