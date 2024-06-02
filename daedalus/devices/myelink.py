@@ -167,13 +167,13 @@ class MyeLink:
         intended = self.tracker_config["General"]["active_eye"]
 
         if (
-            (available == 0 and intended == "LEFT") or 
-            (available == 1 and intended == "RIGHT") or 
+            (available == 0 and intended == "LEFT_EYE") or 
+            (available == 1 and intended == "RIGHT_EYE") or 
             (available == 2 and intended == "BINOCULAR")
         ):
             if log:
                 self.eyelink.sendMessage(f"EYE_USED {available} {intended}")
-            self.tracked_eye = available
+            self.tracked_eye = intended
             success = True
         else:
             self.error = f"Bad Eye. Available: {available}, Intended: {intended}"
@@ -184,9 +184,9 @@ class MyeLink:
         """
         Get the eye sample from the Eyelink tracker
         """
-        if self.tracked_eye == 0 and sample.isLeftSample():
+        if self.tracked_eye == "LEFT_EYE" and sample.isLeftSample():
             g_x, g_y = sample.getLeftEye().getGaze()
-        elif self.tracked_eye == 1 and sample.isRightSample():
+        elif self.tracked_eye == "RIGHT_EYE" and sample.isRightSample():
             g_x, g_y = sample.getRightEye().getGaze()
         else:
             g_x, g_y = None, None
@@ -356,10 +356,45 @@ class MyeLink:
 
         return info
 
-    def process_fixation_start_event(self, data):
+    def process_fixation_samples(self, data):
         """
         Process the fixation start event
         """
+        prev_sample = None
+        while True:
+            sample = self.eyelink.getNextData()
+            if not sample:
+                break
+            
+            if sample == pylink.STARTFIX:
+                
+            if sample is not None:
+                if (prev_sample is None) or (sample.getTime() != prev_sample.getTime()):
+                    
+                    prev_sample = sample
+                    if self.tracked_eye == "RIGHT_EYE" and sample.isRightSample():
+                        data = sample.getRightEye()
+                    elif self.tracked_eye == "LEFT_EYE" and sample.isLeftSample():
+                        data = sample.getLeftEye()
+                    
+                    # Get the sample info
+                    time = sample.getTime()
+                    gaze_x, gaze_y = data.getGaze()
+                    ppd_x, ppd_y = data.getPPD()
+                    pupil_size = data.getPupilSize()
+
+                    if (gaze_x is not None) and (gaze_y is not None):
+                        break
+                data = self.eyelink.getFloatData()
+                if self.tracked_eye == data.getEye():
+                    if event == pylink.STARTFIX:
+                        info = self.fixation_start_event(data)
+                    elif event == pylink.ENDFIX:
+                        info = self.fixation_end_event(data)
+                    elif event == pylink.FIXUPDATE:
+                        info = self.fixation_update_event(data)
+                    else:
+                        pass
         time = data.getStartTime()
         gaze_x, gaze_y = data.getStartGaze()
         ppd_x, ppd_y = data.getStartPPD()
@@ -445,14 +480,14 @@ class MyeLink:
                     ppd_avg_y = (ppd_start_y + ppd_end_y) / 2
 
                     self.eyelink.sendMessage(f"FixStartTime_{time_fix}")
-                    self.eyelink.sendMessage(f"FixStartGaze_{gaze_x}_{gaze_y}")
-                    self.eyelink.sendMessage(f"FixStartPPD_{ppd_x}_{ppd_y}")
+                    self.eyelink.sendMessage(f"FixStartGaze_{gaze_avg_x}_{gaze_avg_y}")
+                    self.eyelink.sendMessage(f"FixStartPPD_{ppd_avg_x}_{ppd_avg_y}")
 
                     info = {
                         "time": time_fix,
                         "time_offset": time_offset,
-                        "gaze": (gaze_x, gaze_y),
-                        "ppd": (ppd_x, ppd_y)
+                        "gaze": (gaze_avg_x, gaze_avg_y),
+                        "ppd": (ppd_avg_x, ppd_avg_y)
                     }
 
                     break
