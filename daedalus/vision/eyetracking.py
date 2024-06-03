@@ -42,7 +42,7 @@ class Eyetracking(Psychophysics):
         self.tracker_model = "Eyelink1000Plus"
 
         # Parameters
-        self.tracker_params = self.load_config("eyetracker")[self.tracker_model]
+        self.tracker_params = self.load_config(self.tracker_model)
 
         # Window
         # Eye tracking experiments always use pixel measurements.
