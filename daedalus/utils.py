@@ -21,22 +21,21 @@ import numpy as np
 
 
 def find_in_configs(dicts: list, key: str, value: str):
-        """
-        Finds the value of a target in a list of dictionaries.
+    """
+    Finds the value of a target in a list of dictionaries.
 
-        Args:
-            dicts (list): A list of dictionaries to search.
-            key (str): The key that should match.
-            value (str): The value for key .
+    Args:
+        dicts (list): A list of dictionaries to search.
+        key (str): The key that should match.
+        value (str): The value for key .
 
-        Returns:
-            dict: The dictionary that contains the target value.
-        """
-        for d in dicts:
-            if d[key] == value:
-                return d
+    Returns:
+        dict: The dictionary that contains the target value.
+    """
+    for d in dicts:
+        if d[key] == value:
+            return d
 
-import numpy as np
 
 def get_hypot(orig_x, orig_y, end_x, end_y):
     """

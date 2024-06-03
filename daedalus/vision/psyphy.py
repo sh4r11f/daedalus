@@ -33,6 +33,19 @@ from .base import Experiment
 class Psychophysics(Experiment):
     """
     Base class for all the experiments. It contains necessary methods and attributes.
+
+    Args:
+        project_root (str): The root directory of the project.
+        platform (str): The platform to run the experiment on.
+        debug (bool): Whether to run the experiment in debug mode.
+
+    Attributes:
+        exp_type (str): The type of the experiment.
+        exp_params (dict): The parameters of the experiment.
+        stim_params (dict): The parameters of the stimuli.
+        subject_info (dict): The information about the subject.
+        files (dict): The files used in the experiment.
+        directories (dict): The directories used in the experiment.
     """
     def __init__(self, project_root: Union[str, Path], platform: str, debug: bool):
 

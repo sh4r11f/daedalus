@@ -33,17 +33,40 @@ from .EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
 
 class Eyetracking(Psychophysics):
     """
+    Eyetracking class for running experiments.
+
+    Args:
+        project_root (Union[str, Path]): The root directory of the project.
+        platform (str): The platform where the experiment is running.
+        debug (bool): Whether to run the experiment in debug mode or not.
     """
-    def __init__(self, project_root: Union[str, Path], platform: str, debug: bool):
+    def __init__(self, project_root: Union[str, Path], platform: str, debug: bool, tracker_model: str = "Eyelink1000Plus"):
 
         # Setup
         super().__init__(project_root, platform, debug)
         self.exp_type = "eyetracking"
-        self.tracker_model = "Eyelink1000Plus"
-
-        # Parameters
+        self.tracker_model = tracker_model
         self.tracker_params = self.load_config(self.tracker_model)
 
+        if "Eyelink" in self.tracker_model:
+            self.tracker = self.init_eyelink_tracker()
+
+    def init_eyelink_tracker(self):
+        """
+        Initializes the eye tracker.
+        """
+        tracker = MyeLink(self.name, self.tracker_params, self.debug)
+        err = tracker.connect()
+
+        if err is None:
+            return tracker
+        else:
+            raise RuntimeError(f"Error in connecting to the tracker: {err}")
+
+    def setup_graphics_env(self):
+        """
+        Sets up the graphics environment for the calibration.
+        """
         # Window
         # Eye tracking experiments always use pixel measurements.
         self.window.units = 'pix'
@@ -216,50 +239,6 @@ class Eyetracking(Psychophysics):
             except:
                 self.tracker.sendMessage('drift_correction_failed')
                 self._log_run("Tracker not drift corrected.")
-
-    def terminate_tracker(self, end: bool = False):
-        """
-        Terminate the task gracefully and retrieve the EDF data file
-
-        Parameters
-        ----------
-        end : whether shutdown psychopy and system program or not
-
-        """
-        # Check if there is an active connection
-        if self.tracker.isConnected() or self.DUMMY:
-
-            # Terminate the current trial first if the task terminated prematurely
-            error = self.tracker.isRecording()
-            if error:
-                self.tracker.sendMessage("abort_trial")
-                self.abort_trial()
-
-            # Put tracker in Offline mode
-            self.tracker.setOfflineMode()
-
-            # Clear the Host PC screen and wait for 500 ms
-            self.tracker.sendCommand('clear_screen 0')
-            pylink.msecDelay(500)
-
-            # Close the edf data file on the Host
-            self.tracker.closeDataFile()
-
-            # Show a file transfer message on the screen
-            msg = 'EDF data is transferring from EyeLink Host PC...'
-            self.show_msg(msg, wait_for_keypress=False)
-
-            # Download the EDF data file from the Host PC to a local data folder
-            # parameters: source_file_on_the_host, destination_file_on_local_drive
-            try:
-                self.tracker.receiveDataFile(self.files["edf_host"], self.files["edf_local"])
-            except RuntimeError as error:
-                logging.error('Error in downloading the EDF file:', error)
-
-            # Close the link to the tracker.
-            if end:
-                pylink.closeGraphics()
-                self.tracker.close()
 
     def abort_trial(self):
         """Ends recording and recycles the trial"""

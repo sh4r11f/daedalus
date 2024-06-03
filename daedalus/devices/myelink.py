@@ -46,40 +46,16 @@ class MyeLink:
         eyelink (pylink.EyeLink): The Eyelink tracker object.
         tracked_eye (str): The eye being tracked.
         error (str): The error message.
-
-    Methods:
-        connect: Connect to the Eyelink tracker.
-        terminate: Close the connection to the Eyelink tracker.
-        open_file: Open a file to record the data and initialize it.
-        get_version: Get the version of the Eyelink tracker.
-        configure_init: Configure the Eyelink track specified events and have the appropriate setup.
-        calibrate: Calibrate the Eyelink 1000.
-        check_eye: Check if the eye is being tracked.
-        get_eye_gaze_pos: Get the eye sample from the Eyelink tracker.
-        online_event_monitor: Find an event in the Eyelink tracker.
-        online_event_processor: Process the events in the Eyelink tracker.
-        online_sample_processor: Process samples for each event in the link buffer.
-        detect_fixation_start_event: Process the fixation start event.
-        detect_fixation_end_event: Process the fixation end event.
-        detect_fixation_update_event: Process the fixation update event.
-        detect_saccade_start_event: Process the saccade start event.
-        detect_saccade_end_event: Process the saccade end event.
-        process_fixation_end_event: Process the fixation end event.
-        process_saccade_end_event: Process the saccade end event.
-        process_sample: Process the fixation start event.
-        realtime_fixation_monitor: Runs a while loop and keeps it running until gaze on some region is established.
-        realtime_fixation_detector: Function to monitor gaze on a static point, like a fixation cross.
-        realtime_saccade_detector: Checks if a saccade is made to a target position.
     """
-    def __init__(self, exp_name, tracker_config, dummy, model="Eyelink1000"):
+    def __init__(self, exp_name, tracker_config, dummy):
 
         # Setup
         self.exp_name = exp_name
         self.tracker_config = tracker_config
         self.dummy = dummy
-        self.model = model
 
         self.delay = self.tracker_config["General"]["delay_time"]
+        self.tracker_model = self.tracker_config["General"]["model"]
         self.eyelink = None
         self.tracked_eye = None
 
@@ -137,8 +113,8 @@ class MyeLink:
             try:
                 self.eyelink.receiveDataFile(host_file, display_file)
                 # Close the connection to the Eyelink tracker
-                self.eyelink.close()
                 self.eyelink.closeGraphics()
+                self.eyelink.close()
             except RuntimeError as err:
                 error = err
         else:
@@ -168,48 +144,57 @@ class MyeLink:
         Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
         e.g., sample rate and calibration type.
         """
-        # Set the tracker parameters
-        self.eyelink.setOfflineMode()
-
         # Set the configuration from the config dictionary
         for key, value in self.tracker_config["AutoConfig"].items():
             self.eyelink.sendCommand(f"{key} = {value}")
             pylink.msecDelay(self.delay)
 
-    def calibrate(self):
+    def set_calibration_graphics(self, graphics_env):
+        """
+        Set the calibration graphics
+
+        Args:
+            graphics_env: External graphics environment to use for calibration
+        """
+        if graphics_env is None:
+            # Open the calibration window
+            width = int(self.tracker_config["screen_width"])
+            height = int(self.tracker_config["screen_height"])
+            bits = int(self.tracker_config["screen_bits"])
+            
+            self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
+            pylink.msecDelay(self.delay)
+            self.eyelink.sendMesage(f"screen_pixel_coords 0 0 {width - 1} {height - 1}")
+            pylink.msecDelay(self.delay)
+
+            pylink.openGraphics((width, height), bits)
+
+        else:
+            pylink.openGraphics(graphics_env)
+
+    def calibrate(self, graphics_env=None):
         """
         Calibrate the Eyelink 1000
+
+        Args:
+            graphics_env: External graphics environment to use for calibration
 
         Returns:
             str or None: The error message.
         """
         error = None
 
-        # Open the calibration window
-        width = int(self.tracker_config["screen_width"])
-        height = int(self.tracker_config["screen_height"])
-        bits = int(self.tracker_config["screen_bits"])
-        self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
-        pylink.msecDelay(self.delay)
-        self.eyelink.sendMesage(f"screen_pixel_coords 0 0 {width - 1} {height - 1}")
-        pylink.msecDelay(self.delay)
-        pylink.openGraphics((width, height), bits)
-
-        # Offline mode and flush
-        self.eyelink.setOfflineMode()
-        pylink.flushGetkeyQueue()
-
         # Check if the eye is being tracked
         eye_error = self.check_eye(log=True)
         if eye_error is None:
             try:
                 # Start the calibration
-                self.eyelink.doTrackerSetup(width, height)
+                self.eyelink.doTrackerSetup()
                 self.eyelink.sendMessage("Calibration_OK")
                 pylink.msecDelay(self.delay)
             except RuntimeError as err:
-                self.eyelink.exitCalibration()
                 error = err
+                self.eyelink.exitCalibration()
         else:
             error = eye_error
 
