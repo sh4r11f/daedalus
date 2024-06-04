@@ -59,7 +59,6 @@ class Psychophysics(Experiment):
 
         # Data
         self.subject_info = dict()
-        self.init_participants_file()
 
     def choose_session_gui(self):
         """
@@ -77,7 +76,7 @@ class Psychophysics(Experiment):
             return dlg.data
         else:
             return None
-    
+
     def register_subject_gui(self, burnt_PIDs: list = None):
         """
         GUI for registering the subject.
@@ -106,7 +105,7 @@ class Psychophysics(Experiment):
             return dlg.data
         else:
             return None
-        
+
     def load_subject_gui(self, valid_PIDs: list):
         """
         GUI for loading the subject.
@@ -139,9 +138,9 @@ class Psychophysics(Experiment):
                 return subject_info
             else:
                 return None
-        else: 
+        else:
             return None
-        
+
     def load_subject_info(self, pid: str):
         """
         Loads the subject info from the subject file.
@@ -166,7 +165,7 @@ class Psychophysics(Experiment):
             df.to_csv(participant_file, sep="\t", index=False)
         else:
             return None
-        
+
     def save_subject_info(self, subject_info: dict):
         """
         Saves the subject info to the participants file.
@@ -175,7 +174,7 @@ class Psychophysics(Experiment):
         sub_df = pd.DataFrame([subject_info])
         out_df = pd.concat([df, sub_df], ignore_index=True)
         out_df.to_csv(self.files["participants"], sep="\t", index=False)
-        
+
     @abstractmethod
     def plan_session(self, **kwargs):
         """

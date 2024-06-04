@@ -18,13 +18,12 @@
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
 from pathlib import Path
-from typing import Union, List, Tuple, Dict
+from typing import Union, List
 
 import numpy as np
 import pandas as pd
 
 import pylink
-from psychopy.tools.monitorunittools import deg2pix
 
 from daedalus.devices.myelink import MyeLink
 from .psyphy import Psychophysics
@@ -36,7 +35,7 @@ class Eyetracking(Psychophysics):
     Eyetracking class for running experiments.
 
     Args:
-        project_root (Union[str, Path]): The root directory of the project.
+        project_root (str or Path): The root directory of the project.
         platform (str): The platform where the experiment is running.
         debug (bool): Whether to run the experiment in debug mode or not.
     """
@@ -48,12 +47,14 @@ class Eyetracking(Psychophysics):
         self.tracker_model = tracker_model
         self.tracker_params = self.load_config(self.tracker_model)
 
-        if "Eyelink" in self.tracker_model:
-            self.tracker = self.init_eyelink_tracker()
+        self.tracker = self.init_eyelink_tracker()
 
     def init_eyelink_tracker(self):
         """
-        Initializes the eye tracker.
+        Initializes the eye tracker and connect to it.
+
+        Returns:
+            MyeLink: The initialized eye tracker object.
         """
         tracker = MyeLink(self.name, self.tracker_params, self.debug)
         err = tracker.connect()
@@ -63,7 +64,7 @@ class Eyetracking(Psychophysics):
         else:
             raise RuntimeError(f"Error in connecting to the tracker: {err}")
 
-    def setup_graphics_env(self):
+    def forge_graphics_env(self):
         """
         Sets up the graphics environment for the calibration.
         """
@@ -73,86 +74,33 @@ class Eyetracking(Psychophysics):
         # NOTE: If we don't do this early, the eyetracker will override it and we always get a grey background.
         self.window.color = self.exp_params["General"]["background_color"]
 
-        # Eyelink-specific .edf files
-        self.files["tracker_host"] = f"{self.settings["Study"]["Shorthand"]}{self._SUBJECT['id']:02d}.edf"
-
-        # Initialize the eye tracker
-        self.tracker = MyeLink(self.tracker_params, self.name, self.window, self.debug)
-
-    def cook_calibration(self):
-        """
-        Calibrates the Eyelink 1000
-        """
-        # Connect to the tracker
-        self.hook_tracker()
-
-        # Configure the tracker
-        self.tracker.confiugre()
-
-        # Setup calibration
-        self.concot_calibration()
-
-        # Open the EDF file
-        self.open_tracker_file()
-
-        # Start calibration
-        calibrated = self.tracker.calibrate()
-        if not calibrated:
-            self.logger.critical(f'Error in calibrating the tracker: {self.tracker.error}')
-            self.goodbye()
-
-    def concot_calibration(self):
-        """
-		Calibration window for the Eyelink 1000
-		"""
-  		# Configure a graphics environment (genv) for tracker calibration
+        # Configure a graphics environment (genv) for tracker calibration
         genv = EyeLinkCoreGraphicsPsychoPy(self.tracker, self.window)
 
-		# Set background and foreground colors for the calibration target
+        # Set background and foreground colors for the calibration target
         foreground_color = self.tracker_params["Calibration"]["target_color"]
         background_color = self.tracker_params["Calibration"]["background_color"]
         genv.setCalibrationColors(foreground_color, background_color)
 
-		# Set up the calibration target
+        # Set up the calibration target
         genv.setTargetType('circle')
+        genv.setTargetSize(
+            (self.tracker_params["Calibration"]["target_size"], self.tracker_params["Calibration"]["hole_size"])
+        )
 
-		# Configure the size of the calibration target (in pixels)
-		# this option applies only to "circle" and "spiral" targets
-        target_size = deg2pix(float(self.tracker_params["Calibration"]["target_size"]), self.monitor)
-        genv.setTargetSize(target_size)
-
-		# Beeps to play during calibration, validation and drift correction
-		# parameters: target, good, error
-		#     target -- sound to play when target moves
-		#     good -- sound to play on successful operation
-		#     error -- sound to play on failure or interruption
-		# Each parameter could be ''--default sound, 'off'--no sound, or a wav file
+        # Beeps to play during calibration, validation and drift correction
+        # parameters: target, good, error
+        #     target -- sound to play when target moves
+        #     good -- sound to play on successful operation
+        #     error -- sound to play on failure or interruption
+        # Each parameter could be ''--default sound, 'off'--no sound, or a wav file
         genv.setCalibrationSounds('', '', '')
-
-		# Request Pylink to use the PsychoPy window we opened above for calibration
-        pylink.openGraphicsEx(genv)
-  
-    def hook_tracker(self):
-        """
-        Connects to an Eyelink 1000 using its python API (pylink).
-        """
-        connection = self.tracker.connect()
-        if not connection:
-            self.logger.critical(f'Error in connecting to the tracker: {self.tracker.error}')
-            self.goodbye()
-
-    def open_tracker_file(self):
-        """
-        Creates an edf file on the host Eyelink computer to record the data
-        """
-        opened = self.tracker.open_file(self.files["tracker_host"])
-        if not opened:
-            self.logger.critical(f'Error in opening the host file: {self.tracker.error}')
-            self.goodbye()
+        genv.setDriftCorrectSounds("", "", "")
 
     def run_calibration(self):
-        """Calibrate the Eyelink 1000"""
-
+        """
+        Calibrate the Eyelink 1000
+        """
         # A guiding message
         msg = 'Press ENTER and C to recalibrate the tracker.\n\n' \
               'Once the calibration is done, press ENTER and O to resume the experiment.'
@@ -167,78 +115,6 @@ class Eyetracking(Psychophysics):
         except (RuntimeError, AttributeError) as err:
             self._log_run(f"Tracker not calibrated: {err}")
             self.tracker.exitCalibration()
-
-    def start_recording(self):
-        """Initiate recording of eye data by the tracker"""
-
-        try:
-            # arguments: sample_to_file, events_to_file, sample_over_link,
-            # event_over_link (1-yes, 0-no)
-            self.tracker.startRecording(1, 1, 1, 1)
-            self._log_run("Tracker recording.")
-            self.tracker.sendMessage("recording")
-
-        except RuntimeError as err:
-            self._log_run(f"Tracker not recording: {err}")
-            self.tracker.sendMessage("not_recording")
-            return pylink.TRIAL_ERROR
-
-    def check_connection(self):
-        """Checks if the tracker is still alive"""
-
-        # Get the status
-        error = self.tracker.isConnected()  # returns 1 if connected, 0 if not connected, -1 if simulated
-
-        # Check it only in the actual running mode because simulated tracker returns -1 in isConnected()
-        if not self.DUMMY:
-
-            # For some reason TRIAL_OK is 0 in pylink
-            if error is pylink.TRIAL_OK:
-                # Log the disconnect
-                self.tracker.sendMessage('tracker_disconnected')
-                logging.error(f"Tracker disconnected. Error: {error}")
-                self.end()
-
-    def drift_correction(self, fix_pos):
-        """
-        Performs drift correction with the Eyelink 1000
-
-        Parameters
-        ----------
-        fix_pos : list or tuple
-            Coordinates of the fixation spot
-        """
-        # unpack the fixation
-        fix_x, fix_y = fix_pos
-
-        # Apply the drift correction
-        self.tracker.sendCommand('driftcorrect_cr_disable = OFF')
-        self.tracker.sendCommand(f'online_dcorr_refposn {int(self.window.size[0] / 2)},{int(self.window.size[1] / 2)}')
-        self.tracker.sendCommand('online_dcorr_button = ON')
-        self.tracker.sendCommand('normal_click_dcorr = OFF')
-
-        # Drift correction for the eye tracker
-        while not self.DUMMY:
-
-            # terminate the task if no longer connected to the tracker or
-            # user pressed Ctrl-C to terminate the task
-            if (not self.tracker.isConnected()) or self.tracker.breakPressed():
-                self.tracker.sendMessage('experiment_aborted')
-                self.terminate_tracker()
-                self.end()
-                raise pylink.ABORT_EXPT
-
-            # drift-check and re-do camera setup if ESCAPE is pressed
-            try:
-                error = self.tracker.doDriftCorrect(int(fix_x), int(fix_y), 1, 1)
-                # break following a success drift-check
-                if error is not pylink.ESC_KEY:
-                    self._log_run("Tracker drift corrected.")
-                    self.tracker.sendMessage("drift_corrected")
-                    break
-            except:
-                self.tracker.sendMessage('drift_correction_failed')
-                self._log_run("Tracker not drift corrected.")
 
     def abort_trial(self):
         """Ends recording and recycles the trial"""

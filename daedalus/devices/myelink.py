@@ -91,7 +91,8 @@ class MyeLink:
         error = None
 
         # Check connection
-        if self.eyelink.isConnected():
+        connected = self.eyelink.isConnected()
+        if connected:
 
             # Stop recording
             if self.eyelink.isRecording():
@@ -112,13 +113,16 @@ class MyeLink:
             # Download the EDF data file from the Host PC to the Display PC
             try:
                 self.eyelink.receiveDataFile(host_file, display_file)
-                # Close the connection to the Eyelink tracker
-                self.eyelink.closeGraphics()
-                self.eyelink.close()
             except RuntimeError as err:
                 error = err
+
+            # Close the connection to the tracker
+            self.eyelink.closeGraphics()
+            closed = self.eyelink.close()
+            error = closed if closed != 0 else None
+
         else:
-            error = "Eyelink tracker is not connected"
+            return connected
 
         return error
 
@@ -161,7 +165,7 @@ class MyeLink:
             width = int(self.tracker_config["screen_width"])
             height = int(self.tracker_config["screen_height"])
             bits = int(self.tracker_config["screen_bits"])
-            
+
             self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
             pylink.msecDelay(self.delay)
             self.eyelink.sendMesage(f"screen_pixel_coords 0 0 {width - 1} {height - 1}")
@@ -172,12 +176,9 @@ class MyeLink:
         else:
             pylink.openGraphics(graphics_env)
 
-    def calibrate(self, graphics_env=None):
+    def calibrate(self):
         """
         Calibrate the Eyelink 1000
-
-        Args:
-            graphics_env: External graphics environment to use for calibration
 
         Returns:
             str or None: The error message.
@@ -199,6 +200,52 @@ class MyeLink:
             error = eye_error
 
         return error
+
+    def drift_correct(self, fix_x, fix_y):
+        """
+        Run drift correction
+
+        Args:
+            fix_x (int): The x-coordinate of the fixation point.
+            fix_y (int): The y-coordinate of the fixation point.
+
+        Returns:
+            str or None: The error message.
+        """
+        error = None
+        while True:
+            # terminate the task if no longer connected to the tracker or
+            # user pressed Ctrl-C to terminate the task
+            if not self.eyelink.isConnected():
+                error = "Tracker not connected."
+                return error
+
+            if self.eyelink.breakPressed():
+                error = "User terminated the task."
+                return error
+
+            # Perform drift correction
+            err = self.eyelink.doDriftCorrect(fix_x, fix_y, draw=1, allow_setup=1)
+            # break if successful
+            if err is not pylink.ESC_KEY:
+                break
+            else:
+                error = err
+
+        return error
+
+    def record(self):
+        """
+        Start recording the data
+
+        Returns:
+            str or None: The error message.
+        """
+        error = self.eyelink.startRecording(1, 1, 1, 1)
+        if error != 0:
+            return error
+        else:
+            return None
 
     def check_sample_rate(self):
         """
@@ -290,6 +337,13 @@ class MyeLink:
 
         # Go through the samples and events in the buffer
         while True:
+
+            if not self.eyelink.isConnected():
+                return "Disconnected from the tracker."
+
+            if self.eyelink.breakPressed():
+                return "User terminated the task."
+
             buffer_item = self.eyelink.getNextData()
             if not buffer_item:
                 break
@@ -342,6 +396,13 @@ class MyeLink:
 
         # Go through the samples and events in the buffer
         while True:
+
+            if not self.eyelink.isConnected():
+                return "Disconnected from the tracker."
+
+            if self.eyelink.breakPressed():
+                return "User terminated the task."
+            
             buffer_item = self.eyelink.getNextData()
             if not buffer_item:
                 break
@@ -387,8 +448,14 @@ class MyeLink:
         prev_sample = None
 
         while True:
-            buffer_item = self.eyelink.getNextData()
 
+            if not self.eyelink.isConnected():
+                return "Disconnected from the tracker."
+
+            if self.eyelink.breakPressed():
+                return "User terminated the task."
+
+            buffer_item = self.eyelink.getNextData()
             if not buffer_item:
                 break
 
@@ -638,6 +705,13 @@ class MyeLink:
         prev_sample = None
 
         while not trigger:
+            
+            if not self.eyelink.isConnected():
+                return "Disconnected from the tracker."
+
+            if self.eyelink.breakPressed():
+                return "User terminated the task."
+
             current_sample = self.tracker.getNewestSample()
 
             # check if the new sample has data for the eye currently being tracked
@@ -767,6 +841,13 @@ class MyeLink:
 
         # Wait for the saccade
         while not saccade:
+
+            if not self.eyelink.isConnected():
+                return "Disconnected from the tracker."
+
+            if self.eyelink.breakPressed():
+                return "User terminated the task."
+
             # wait for a saccade event to occur
             if clock.getTime() - target_onset >= wait_duration:
                 saccade_info["status"] = 0

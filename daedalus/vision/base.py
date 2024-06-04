@@ -285,7 +285,7 @@ class Experiment:
                 display_warnings += f"(✓) Monitor refresh rate checks out.\n\n"
 
         # Look for flagged processes
-        flagged =run_info['systemUserProcFlagged']
+        flagged = run_info['systemUserProcFlagged']
         if len(flagged):
             procs = "Flagged processes: "
             display_warnings += "\t(✘) Flagged processes: "
@@ -405,7 +405,7 @@ class Experiment:
         n_dropped = len(np.where(z_intervals > 3)[0])
 
         return n_dropped
-    
+
     def ms2fr(self, duration: float):
         """ Converts durations from ms to display frames"""
         return np.ceil(duration * self.params["refresh_rate"] / 1000).astype(int)
