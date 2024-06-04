@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 # ==================================================================================================== #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                    SCRIPT: eyetracking.py                                                                                                                                              #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#          DESCRIPTION: Class for eyetracking experiments                                                                                                               #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                       RULE: DAYW                                                                                                                                                            #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                  CREATOR: Sharif Saleki                                                                                                                                                #
-#                         TIME: 05-26-2024-[78 105 98 105114117]                                                                                                           #
-#                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
-#                                                                                                                                                                                                      #
+#
+#
+#                    SCRIPT: eyetracking.py
+#
+#
+#          DESCRIPTION: Class for eyetracking experiments
+#
+#
+#                       RULE: DAYW
+#
+#
+#
+#                  CREATOR: Sharif Saleki
+#                         TIME: 05-26-2024-[78 105 98 105114117]
+#                       SPACE: Dartmouth College, Hanover, NH
+#
 # ==================================================================================================== #
 from pathlib import Path
 from typing import Union, List
@@ -39,14 +39,20 @@ class Eyetracking(Psychophysics):
         platform (str): The platform where the experiment is running.
         debug (bool): Whether to run the experiment in debug mode or not.
     """
-    def __init__(self, project_root: Union[str, Path], platform: str, debug: bool, tracker_model: str = "Eyelink1000Plus"):
+    def __init__(
+        self,
+        project_root: Union[str, Path],
+        platform: str,
+        debug: bool,
+        tracker_model: str = "Eyelink1000Plus"
+    ):
 
         # Setup
         super().__init__(project_root, platform, debug)
+
         self.exp_type = "eyetracking"
         self.tracker_model = tracker_model
         self.tracker_params = self.load_config(self.tracker_model)
-
         self.tracker = self.init_eyelink_tracker()
 
     def init_eyelink_tracker(self):
@@ -94,7 +100,7 @@ class Eyetracking(Psychophysics):
         #     good -- sound to play on successful operation
         #     error -- sound to play on failure or interruption
         # Each parameter could be ''--default sound, 'off'--no sound, or a wav file
-        genv.setCalibrationSounds('', '', '')
+        genv.setCalibrationSounds("", "", "")
         genv.setDriftCorrectSounds("", "", "")
 
     def run_calibration(self):
@@ -134,7 +140,7 @@ class Eyetracking(Psychophysics):
 
         # send a message to mark trial end
         # self.tracker.sendMessage(f'TRIAL_RESULT {pylink.TRIAL_ERROR}')
-        self.tracker.sendMessage(f'TRIAL_FAIL')
+        self.tracker.sendMessage('TRIAL_FAIL')
 
         # Log
         self._log_run("!!! Trial aborted.")

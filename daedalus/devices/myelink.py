@@ -47,15 +47,15 @@ class MyeLink:
         tracked_eye (str): The eye being tracked.
         error (str): The error message.
     """
-    def __init__(self, exp_name, tracker_config, dummy):
+    def __init__(self, exp_name, tracker_name, tracker_config, dummy):
 
         # Setup
         self.exp_name = exp_name
+        self.tracker_name = tracker_name
         self.tracker_config = tracker_config
         self.dummy = dummy
 
-        self.delay = self.tracker_config["General"]["delay_time"]
-        self.tracker_model = self.tracker_config["General"]["model"]
+        self.delay = self.tracker_config["delay_time"]
         self.eyelink = None
         self.tracked_eye = None
 
@@ -137,7 +137,7 @@ class MyeLink:
             str or None: The error message.
         """
         error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
-        self.eyelink.sendCommand(f"add_file_preamble_text {self.tracker_config['General']['preamble_text']}")
+        self.eyelink.sendCommand(f"add_file_preamble_text {self.tracker_config['preamble_text']}")
         if error != 0:
             return error
         else:
@@ -257,7 +257,7 @@ class MyeLink:
         error = None
 
         tracker_rate = self.eyelink.getSampleRate()
-        intended_rate = self.tracker_config["General"]["sample_rate"]
+        intended_rate = self.tracker_config["sample_rate"]
 
         if tracker_rate != intended_rate:
             error = f"Sample rate mismatch. Tracker: {tracker_rate}, Intended: {intended_rate}"
