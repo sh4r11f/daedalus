@@ -17,7 +17,49 @@
 #                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
+import yaml
+import json
+from pathlib import Path
+
 import numpy as np
+
+
+def read_config(file_path):
+    """
+    Reads and saves parameters specified in a json file under the config directory, e.g. config/params.json
+
+    Args:
+        file_path (str): The path to the .json or .yaml file.
+
+    Returns:
+        dict: The .json file is returned as a python dictionary.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file extension is not .json or .yaml.
+    """
+    # Find the parameters file
+    params_file = Path(file_path)
+
+    # Check the extension
+    if params_file.suffix == ".json":
+        # Check its status and read it
+        if params_file.is_file():
+            with open(params_file) as pf:
+                params = json.load(pf)
+                return params
+        else:
+            raise FileNotFoundError(f"{str(params_file)} does not exist")
+    elif params_file.suffix == ".yaml":
+        # Check its status and read it
+        if params_file.is_file():
+            with open(params_file) as pf:
+                params = yaml.safe_load(pf)
+                return params
+        else:
+            raise FileNotFoundError(f"{str(params_file)} does not exist")
+    else:
+        raise ValueError(f"Invalid file extension: {params_file.suffix}")
 
 
 def find_in_configs(dicts: list, key: str, value: str):

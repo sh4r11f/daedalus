@@ -26,6 +26,7 @@ import pandas as pd
 import pylink
 
 from daedalus.devices.myelink import MyeLink
+from daedalus import utils
 from .psyphy import Psychophysics
 from .EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
 
@@ -52,7 +53,7 @@ class Eyetracking(Psychophysics):
 
         self.exp_type = "eyetracking"
         self.tracker_model = tracker_model
-        self.tracker_params = self.load_config(self.tracker_model)
+        self.tracker_params = utils.load_config(self.directories["config"], "eyetrackers.yaml")[self.tracker_model]
         self.tracker = self.init_eyelink_tracker()
 
     def init_eyelink_tracker(self):

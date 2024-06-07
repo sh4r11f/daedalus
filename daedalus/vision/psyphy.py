@@ -18,7 +18,6 @@
 #
 # ==================================================================================================== #
 import sys
-import yaml
 from pathlib import Path
 from typing import Dict, Union, Tuple
 
@@ -54,38 +53,46 @@ class Psychophysics:
         debug (bool): Debug mode for the experiment.
         info (dict): Subject and experiment information.
     """
-    def __init__(self, project_root: Union[str, Path], platform: str, debug: bool):
+    def __init__(self, root: Union[str, Path], platform: str, debug: bool):
 
         # Setup
-        self.project_root = Path(project_root)
+        self.exp_type = 'psychophysics'
+        self.root = Path(root)
         self.platform = platform
         self.debug = debug
 
-        self.exp_type = 'basic'
-        self.settings = self.read_config('settings')
-        self.exp_params = self.read_config('experiment')
-        self.stim_params = self.read_config('stimuli')
-        self.mon_params = self.read_config('monitors')
+        # Directories and files
+        self.dirs = self.init_directories()
+        self.files = self.init_files()
 
-        # For easier access
+        # Load settings
+        self.settings = utils.read_config(self.files["settings"])
         self.study_settings = self.settings["Study"]
         self.name = self.study_settings["Name"]
         self.version = self.study_settings["Version"]
-        self.platform_settings = utils.find_in_configs(self.settings["Platform"], "Name", self.platform)
+        self.platform_settings = self.settings["Platforms"][self.platform]
+        modules = self.platform_settings["Modules"]
+        for mod in modules:
+            name = mod["name"]
+            path = mod["path"]
+            self.files[name] = path
 
-        # Directories, files, info, clocks
-        self.directories = self.setup_directories()
-        self.clocks = self.setup_clocks
-        self.files = dict()
-        self.runtime_info = dict()
+        # Load parameters
+        self.exp_params = utils.read_config(self.files["experiment_config"])
+        self.stim_params = utils.read_config(self.files["stimuli_config"])
 
-        # Set up logging
-        self.logger = self.init_logging()
-
-        # Window and monitor
+        # Monitor and window
+        monitor_name = self.platform_settings["Monitor"]
+        mon_params = utils.read_config(self.files["monitors_config"])
+        self.monitor_params = mon_params[monitor_name]
         self.monitor, self.window = self.make_display()
 
-    def setup_clocks(self):
+        # Files, info, clocks, and logging
+        self.clocks = self.init_clocks
+        self.runtime_info = dict()
+        self.logger = self.init_logging()
+
+    def init_clocks(self):
         """
         Set up the clocks for the experiment.
         """
@@ -96,48 +103,21 @@ class Psychophysics:
         }
         return clocks
 
-    def read_config(self, conf_name: str):
-        """
-        Reads and saves parameters specified in a json file under the config directory, e.g. config/params.json
-
-        Args:
-            conf_name (str): Name of the file to be loaded.
-
-        Returns:
-            dict: The .json file is returned as a python dictionary.
-        """
-        # Find the parameters file
-        params_file = self.project_root / "config" / f"{conf_name}.yaml"
-
-        # Check its status and read it
-        if params_file.is_file():
-            try:
-                with open(params_file) as pf:
-                    params = yaml.safe_load(pf)
-            # for corrupted files or other issues
-            except IOError as e:
-                logging.error(f"Unable to open the {conf_name} file: {e}")
-                raise f"Unable to open the {conf_name} file: {e}"
-        else:
-            raise FileNotFoundError(f"{str(params_file)} does not exist")
-
-        return params
-
-    def setup_directories(self) -> Dict:
+    def init_directories(self) -> Dict:
         """
         Sets up the directories and paths that are important in the experiment. The structure roughly follows the
         BIDS convention.
 
-        Example: data/FIPS/sub-01/staircase/
-                 data/FIPS2/sub-02/perceptual/
-                 ...
+        Example:  data/FIPS/sub-01/staircase/
+                        data/FIPS2/sub-02/perceptual/
+                        ...
         Returns
             dict: data, sub, and task keys and the corresponding Path objects as values.
         """
         dirs = dict()
 
         # Project
-        dirs["project"] = self.project_root
+        dirs["project"] = self.root
 
         # Config directory
         config_dir = self.root / "config"
@@ -148,25 +128,45 @@ class Psychophysics:
         data_dir.mkdir(parents=True, exist_ok=True)
         dirs["data"] = data_dir
 
+        # Stimuli directory
+        stimuli_dir = self.root / "stimuli"
+        dirs["stimuli"] = stimuli_dir
+
         # Log directory
         log_dir = self.root / "log" / f"v{self.version}"
         log_dir.mkdir(parents=True, exist_ok=True)
         dirs["log"] = log_dir
 
-        # Other directories
-        modules = self.platform_settings["Modules"]
-        for mod in modules:
-            name = mod["name"]
-            path = mod["path"]
-            dirs[name] = path
-
         return dirs
+
+    def init_files(self) -> Dict:
+        """
+        Sets up the files that are important in the experiment. The structure roughly follows the BIDS convention.
+
+        Example:  data/FIPS/sub-01/staircase/
+                        data/FIPS2/sub-02/perceptual/
+                        ...
+        Returns
+            dict: participants, stimuli, and other files as keys and the corresponding Path objects as values.
+        """
+        files = dict()
+
+        # Config files
+        files["settings"] = (self.directories["config"] / "settings.yaml")
+        files["experiment_config"] = (self.directories["config"] / "experiment.yaml")
+        files["stimuli_config"] = (self.directories["config"] / "stimuli.yaml")
+        files["monitors_config"] = (self.directories["config"] / "monitors.yaml")
+
+        # Participants file
+        files["participants"] = str(self.directories["data"] / "participants.tsv")
+
+        return files
 
     def init_logging(self):
         """
         Generates the log file for experiment-level logging.
         """
-        # Make the logger object 
+        # Make the logger object
         logger = log_handler.get_logger(self.name)
 
         # Log file
@@ -204,25 +204,21 @@ class Psychophysics:
 
             win : psychopy.visual.Window
         """
-        # Find the monitor name and specification
-        monitor_name = self.platform_settings["Monitor"]
-        monitor_specs = self.mon_params[monitor_name]
-
         # Refresh rate
-        rf = monitor_specs["refresh_rate"]
+        rf = self.monitor_params["refresh_rate"]
         self.runtime_info["refresh_rate"] = rf
 
         # Make the monitor object and set width, distance, and resolution
         monitor = monitors.Monitor(
-            name=monitor_name,
-            width=monitor_specs["size_cm"][0],
-            distance=monitor_specs["distance"],
+            name=self.platform_settings["Monitor"],
+            width=self.monitor_params["size_cm"][0],
+            distance=self.monitor_params["distance"],
             autoLog=False
         )
-        monitor.setSizePix(monitor_specs["size_px"])
+        monitor.setSizePix(self.monitor_params["size_px"])
 
         # Gamma correction
-        gamma_file = self.directories["config"] / f"{monitor_name}_gamma_grid.npy"
+        gamma_file = self.directories["config"] / f"{self.monitor_params}_gamma_grid.npy"
         try:
             grid = np.load(str(gamma_file))
             monitor.setLineariseMethod(1)  # (a + b**xx)**gamma
@@ -237,7 +233,7 @@ class Psychophysics:
             full_screen = False
             show_gui = True
         else:
-            monitor_size_px = monitor_specs["size_px"]
+            monitor_size_px = self.monitor_params["size_px"]
             full_screen = True
             show_gui = False
 
