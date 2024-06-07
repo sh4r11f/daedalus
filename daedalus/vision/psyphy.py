@@ -53,11 +53,13 @@ class Psychophysics:
         debug (bool): Debug mode for the experiment.
         info (dict): Subject and experiment information.
     """
-    def __init__(self, root: Union[str, Path], platform: str, debug: bool):
+    def __init__(self, name: str, root: Union[str, Path], version: str, platform: str, debug: bool):
 
         # Setup
         self.exp_type = 'psychophysics'
+        self.name = name
         self.root = Path(root)
+        self.version = version
         self.platform = platform
         self.debug = debug
 
@@ -65,32 +67,19 @@ class Psychophysics:
         self.dirs = self.init_directories()
         self.files = self.init_files()
 
-        # Load settings
+        # Load config
         self.settings = utils.read_config(self.files["settings"])
-        self.study_settings = self.settings["Study"]
-        self.name = self.study_settings["Name"]
-        self.version = self.study_settings["Version"]
         self.platform_settings = self.settings["Platforms"][self.platform]
-        modules = self.platform_settings["Modules"]
-        for mod in modules:
-            name = mod["name"]
-            path = mod["path"]
-            self.files[name] = path
-
-        # Load parameters
-        self.exp_params = utils.read_config(self.files["experiment_config"])
-        self.stim_params = utils.read_config(self.files["stimuli_config"])
-
-        # Monitor and window
-        monitor_name = self.platform_settings["Monitor"]
-        mon_params = utils.read_config(self.files["monitors_config"])
+        self.exp_params = utils.read_config(self.files["experiment_params"])
+        self.stim_params = utils.read_config(self.files["stimuli_params"])
+        monitor_name = self.platfrom_settings["Monitor"]
+        mon_params = utils.read_config(self.files["monitors"])
         self.monitor_params = mon_params[monitor_name]
-        self.monitor, self.window = self.make_display()
 
-        # Files, info, clocks, and logging
-        self.clocks = self.init_clocks
-        self.runtime_info = dict()
+        # Other attributes
         self.logger = self.init_logging()
+        self.monitor, self.window = self.make_display()
+        self.clocks = self.init_clocks()
 
     def init_clocks(self):
         """
@@ -152,13 +141,25 @@ class Psychophysics:
         files = dict()
 
         # Config files
-        files["settings"] = (self.directories["config"] / "settings.yaml")
-        files["experiment_config"] = (self.directories["config"] / "experiment.yaml")
-        files["stimuli_config"] = (self.directories["config"] / "stimuli.yaml")
-        files["monitors_config"] = (self.directories["config"] / "monitors.yaml")
+        files["settings"] = str(self.directories["config"] / "settings.yaml")
+
+        # Parameters files
+        param_files = Path(self.directories["config"]).glob("*.yaml")
+        for file in param_files:
+            if file != "settings.yaml":
+                files[f"{file.stem}_params"] = str(file)
 
         # Participants file
         files["participants"] = str(self.directories["data"] / "participants.tsv")
+        if not Path(files["participants"]).exists():
+            self.init_participants_file()
+
+        # Modules
+        modules = self.self.platfrom_settings["Modules"]
+        for mod in modules:
+            name = mod["name"]
+            path = mod["path"]
+            files[name] = path
 
         return files
 
@@ -171,6 +172,12 @@ class Psychophysics:
 
         # Log file
         log_file = self.directories["log"] / f"exp_{self.name}_v{self.version}.log"
+        self.files["log"] = str(log_file)
+        if log_file.exists():
+            # clear the log file
+            log_file.unlink()
+        # create the log file
+        log_file.touch()
 
         # Add new handlers
         log_handler.add_handlers(logger, log_file)
@@ -183,7 +190,7 @@ class Psychophysics:
         logger.info("Greetings, my friend! I'm your experiment logger for the day.")
         logger.info(f"Our today's experiment is: {self.name}.")
         logger.info("Here are some settings we're working with: ")
-        for key, value in self.study_settings.items():
+        for key, value in self.settings["Study"].items():
             logger.info(f"\t\t -{key}: {value}")
         for key, value in self.platform_settings.items():
             logger.info(f"\t\t -{key}: {value}")
@@ -204,10 +211,6 @@ class Psychophysics:
 
             win : psychopy.visual.Window
         """
-        # Refresh rate
-        rf = self.monitor_params["refresh_rate"]
-        self.runtime_info["refresh_rate"] = rf
-
         # Make the monitor object and set width, distance, and resolution
         monitor = monitors.Monitor(
             name=self.platform_settings["Monitor"],
@@ -264,7 +267,7 @@ class Psychophysics:
         GUI for choosing/registering subjects.
 
         Returns:
-            function: The function that will be called next.
+            str: The choice made by the user.
 
         Raises:
             ValueError: If the experiment is cancelled.
@@ -282,10 +285,7 @@ class Psychophysics:
 
         dlg.show()
         if dlg.OK:
-            if dlg.data[0] == "Register":
-                return self.subject_registration_gui()
-            elif dlg.data[0] == "Load":
-                return self.subject_loadation_gui()
+            return dlg.data[0]
         else:
             raise ValueError("Experiment cancelled.")
 
@@ -311,7 +311,7 @@ class Psychophysics:
         dlg.addFixedField("Version", self.version)
 
         # Check what PIDs are already used
-        pids = [f"{id:02d}" for id in range(1, int(self.exp_params["General"]["num_subjects"]) + 1)]
+        pids = [f"{id:02d}" for id in range(1, int(self.exp_params["NumSubjects"]) + 1)]
         burnt_pids = self.load_participants_file()["PID"].values
         available_pids = [pid for pid in pids if pid not in burnt_pids]
 
@@ -465,12 +465,16 @@ class Psychophysics:
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.files["participants"], sep="\t", index=False)
 
-    def save_subject_info(self, subject_info: dict):
+    def save_subject_info(self, subject_info):
         """
         Saves the subject info to the participants file.
+
+        Args:
+            subject_info (dict or DataFrame): The subject info as a dictionary.
         """
         df = pd.read_csv(self.files["participants"], sep="\t")
-        sub_df = pd.DataFrame([subject_info])
+        if isinstance(subject_info, dict):
+            sub_df = pd.DataFrame([subject_info], columns=subject_info.keys())
         out_df = pd.concat([df, sub_df], ignore_index=True)
         out_df.to_csv(self.files["participants"], sep="\t", index=False)
 
@@ -497,7 +501,7 @@ class Psychophysics:
 
         # Test the refresh rate of the monitor
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
-        intended_rf = int(self.runtime_info["refresh_rate"])
+        intended_rf = int(self.monitor_params["refresh_rate"])
 
         if rf is None:
             self.logger.critical("No identical frame refresh times were found.")

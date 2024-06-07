@@ -17,14 +17,6 @@
 #                       SPACE: Dartmouth College, Hanover, NH
 #
 # ==================================================================================================== #
-from pathlib import Path
-from typing import Union, List
-
-import numpy as np
-import pandas as pd
-
-import pylink
-
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
 from .psyphy import Psychophysics
@@ -36,27 +28,30 @@ class Eyetracking(Psychophysics):
     Eyetracking class for running experiments.
 
     Args:
-        project_root (str or Path): The root directory of the project.
+        root (str or Path): The root directory of the project.
         platform (str): The platform where the experiment is running.
         debug (bool): Whether to run the experiment in debug mode or not.
     """
     def __init__(
         self,
-        project_root: Union[str, Path],
+        name: str,
+        root,
+        version: str,
         platform: str,
         debug: bool,
         tracker_model: str = "Eyelink1000Plus"
     ):
-
         # Setup
-        super().__init__(project_root, platform, debug)
+        super().__init__(name, root, version, platform, debug)
 
         self.exp_type = "eyetracking"
-        self.tracker_model = tracker_model
-        self.tracker_params = utils.load_config(self.directories["config"], "eyetrackers.yaml")[self.tracker_model]
-        self.tracker = self.init_eyelink_tracker()
 
-    def init_eyelink_tracker(self):
+        # Tracker
+        self.tracker_model = tracker_model
+        self.tracker_params = utils.load_config(self.files["eyetrackers_params"])[self.tracker_model]
+        self.tracker = self.init_tracker()
+
+    def init_tracker(self):
         """
         Initializes the eye tracker and connect to it.
 
@@ -74,6 +69,9 @@ class Eyetracking(Psychophysics):
     def forge_graphics_env(self):
         """
         Sets up the graphics environment for the calibration.
+
+        Returns:
+            EyeLinkCoreGraphicsPsychoPy: The graphics environment for the calibration.
         """
         # Window
         # Eye tracking experiments always use pixel measurements.
@@ -104,224 +102,226 @@ class Eyetracking(Psychophysics):
         genv.setCalibrationSounds("", "", "")
         genv.setDriftCorrectSounds("", "", "")
 
-    def run_calibration(self):
-        """
-        Calibrate the Eyelink 1000
-        """
-        # A guiding message
-        msg = 'Press ENTER and C to recalibrate the tracker.\n\n' \
-              'Once the calibration is done, press ENTER and O to resume the experiment.'
-        self.show_msg(msg)
+        return genv
 
-        # Initiate calibration
-        try:
-            self.tracker.doTrackerSetup()
-            self._log_run("Tracker calibrated.")
-            self.tracker.sendMessage('tracker_calibrated')
+    # def run_calibration(self):
+    #     """
+    #     Calibrate the Eyelink 1000
+    #     """
+    #     # A guiding message
+    #     msg = 'Press ENTER and C to recalibrate the tracker.\n\n' \
+    #           'Once the calibration is done, press ENTER and O to resume the experiment.'
+    #     self.show_msg(msg)
 
-        except (RuntimeError, AttributeError) as err:
-            self._log_run(f"Tracker not calibrated: {err}")
-            self.tracker.exitCalibration()
+    #     # Initiate calibration
+    #     try:
+    #         self.tracker.doTrackerSetup()
+    #         self._log_run("Tracker calibrated.")
+    #         self.tracker.sendMessage('tracker_calibrated')
 
-    def abort_trial(self):
-        """Ends recording and recycles the trial"""
+    #     except (RuntimeError, AttributeError) as err:
+    #         self._log_run(f"Tracker not calibrated: {err}")
+    #         self.tracker.exitCalibration()
 
-        # Stop recording
-        if self.tracker.isRecording():
-            # add 100 ms to catch final trial events
-            pylink.pumpDelay(100)
-            self.tracker.stopRecording()
+    # def abort_trial(self):
+    #     """Ends recording and recycles the trial"""
 
-        # clear the screen
-        self.clear_screen()
+    #     # Stop recording
+    #     if self.tracker.isRecording():
+    #         # add 100 ms to catch final trial events
+    #         pylink.pumpDelay(100)
+    #         self.tracker.stopRecording()
 
-        # Send a message to clear the Data Viewer screen
-        bgcolor_RGB = (116, 116, 116)
-        self.tracker.sendMessage('!V CLEAR %d %d %d' % bgcolor_RGB)
+    #     # clear the screen
+    #     self.clear_screen()
 
-        # send a message to mark trial end
-        # self.tracker.sendMessage(f'TRIAL_RESULT {pylink.TRIAL_ERROR}')
-        self.tracker.sendMessage('TRIAL_FAIL')
+    #     # Send a message to clear the Data Viewer screen
+    #     bgcolor_RGB = (116, 116, 116)
+    #     self.tracker.sendMessage('!V CLEAR %d %d %d' % bgcolor_RGB)
 
-        # Log
-        self._log_run("!!! Trial aborted.")
+    #     # send a message to mark trial end
+    #     # self.tracker.sendMessage(f'TRIAL_RESULT {pylink.TRIAL_ERROR}')
+    #     self.tracker.sendMessage('TRIAL_FAIL')
 
-    def validate_all_gaze(self, gaze_arr: Union[List, np.ndarray], period: str):
-        """
-        Checks all gaze reports and throws an error if there is any gaze deviation.
-        The runtime error should be caught later and handled by recycling the trial.
+    #     # Log
+    #     self._log_run("!!! Trial aborted.")
 
-        Parameters
-        ----------
-        gaze_arr : list or array
-            The array of True or False for each gaze time point.
+    # def validate_all_gaze(self, gaze_arr: Union[List, np.ndarray], period: str):
+    #     """
+    #     Checks all gaze reports and throws an error if there is any gaze deviation.
+    #     The runtime error should be caught later and handled by recycling the trial.
 
-        period : str
-            Name of the period where the validation is being done for.
-        """
-        # Check all the timepoints
-        if not all(gaze_arr):
+    #     Parameters
+    #     ----------
+    #     gaze_arr : list or array
+    #         The array of True or False for each gaze time point.
 
-            # Log
-            self._log_run(f"Gaze fail in trial {self.trial}, {period} period.")
-            self.tracker.sendMessage(f"{period.upper()}_FAIL")
+    #     period : str
+    #         Name of the period where the validation is being done for.
+    #     """
+    #     # Check all the timepoints
+    #     if not all(gaze_arr):
 
-            # Change fixation color to red
-            self.stimuli["fix"].color = [1, -1, -1]
-            self.stimuli["fix"].draw()
-            self.window.flip()
+    #         # Log
+    #         self._log_run(f"Gaze fail in trial {self.trial}, {period} period.")
+    #         self.tracker.sendMessage(f"{period.upper()}_FAIL")
 
-            # Throw an error
-            raise RuntimeError
+    #         # Change fixation color to red
+    #         self.stimuli["fix"].color = [1, -1, -1]
+    #         self.stimuli["fix"].draw()
+    #         self.window.flip()
 
-    def setup_run(self, inst_msg: str):
-        """
-        Initiates clocks, shows beginning message, and logs start of a run.
+    #         # Throw an error
+    #         raise RuntimeError
 
-        Parameters
-        ----------
-        inst_msg : str
-            A text that has instructions for start of the experiment
-        """
-        # Setup files for logging and saving this run
-        self._file_setup()
-        self.files["tracker_local"] = str(self.files["run"]) + '.edf'
-        # initiate file on the tracker
-        self.open_tracker_file()
+    # def setup_run(self, inst_msg: str):
+    #     """
+    #     Initiates clocks, shows beginning message, and logs start of a run.
 
-        # Clock
-        self.clocks["run"].reset()
+    #     Parameters
+    #     ----------
+    #     inst_msg : str
+    #         A text that has instructions for start of the experiment
+    #     """
+    #     # Setup files for logging and saving this run
+    #     self._file_setup()
+    #     self.files["tracker_local"] = str(self.files["run"]) + '.edf'
+    #     # initiate file on the tracker
+    #     self.open_tracker_file()
 
-        # Change the log level task name for this run
-        logging.addLevel(99, self.task)
+    #     # Clock
+    #     self.clocks["run"].reset()
 
-        # Log the start of the run
-        self.log_section('Run', 'start')
-        self.tracker.sendMessage(f"TASK_START")
-        self.tracker.sendMessage(f"TASKID_{self.task}")
-        self.tracker.sendMessage(f"RUN_START")
-        self.tracker.sendMessage(f"RUNID_{self.exp_run}")
+    #     # Change the log level task name for this run
+    #     logging.addLevel(99, self.task)
 
-        # Show instruction message before starting
-        self.show_msg(inst_msg)
+    #     # Log the start of the run
+    #     self.log_section('Run', 'start')
+    #     self.tracker.sendMessage(f"TASK_START")
+    #     self.tracker.sendMessage(f"TASKID_{self.task}")
+    #     self.tracker.sendMessage(f"RUN_START")
+    #     self.tracker.sendMessage(f"RUNID_{self.exp_run}")
 
-    def setup_block(self, calib=True):
-        """
-        Sets up an experimental block. Shows a text message and initiates and calibrates the eye tracker.
-        """
-        # Timing
-        self.clocks["block"].reset()
+    #     # Show instruction message before starting
+    #     self.show_msg(inst_msg)
 
-        # Tracker initialization
-        self.tracker.setOfflineMode()
-        if calib:
-            self.run_calibration()
+    # def setup_block(self, calib=True):
+    #     """
+    #     Sets up an experimental block. Shows a text message and initiates and calibrates the eye tracker.
+    #     """
+    #     # Timing
+    #     self.clocks["block"].reset()
 
-        # clear the host screen
-        self.tracker.sendCommand('clear_screen 0')
+    #     # Tracker initialization
+    #     self.tracker.setOfflineMode()
+    #     if calib:
+    #         self.run_calibration()
 
-        # log the beginning of block
-        self.log_section('Block', 'start')
-        self.tracker.sendMessage(f"BLOCK_START")
-        self.tracker.sendMessage(f"BLOCKID_{self.block}")
+    #     # clear the host screen
+    #     self.tracker.sendCommand('clear_screen 0')
 
-    def trial_cleanup(self):
-        """
-        Turns off the stimuli and stop the tracker to clean up the trial.
-        """
-        # Turn off all stimuli
-        self.clear_screen()
-        # clear the host screen too
-        self.tracker.sendCommand('clear_screen 0')
+    #     # log the beginning of block
+    #     self.log_section('Block', 'start')
+    #     self.tracker.sendMessage(f"BLOCK_START")
+    #     self.tracker.sendMessage(f"BLOCKID_{self.block}")
 
-        # Stop recording frame interval
-        self.window.recordFrameIntervals = False
+    # def trial_cleanup(self):
+    #     """
+    #     Turns off the stimuli and stop the tracker to clean up the trial.
+    #     """
+    #     # Turn off all stimuli
+    #     self.clear_screen()
+    #     # clear the host screen too
+    #     self.tracker.sendCommand('clear_screen 0')
 
-        # Stop recording; add 100 msec to catch final events before stopping
-        pylink.pumpDelay(100)
-        self.tracker.stopRecording()
+    #     # Stop recording frame interval
+    #     self.window.recordFrameIntervals = False
 
-    def block_cleanup(self):
-        """ Logs the end of a block and shows message about the remaining blocks"""
+    #     # Stop recording; add 100 msec to catch final events before stopping
+    #     pylink.pumpDelay(100)
+    #     self.tracker.stopRecording()
 
-        # Log the end of the block
-        self.log_section("Block", "end")
-        self.tracker.sendMessage(f"BLOCKID_{self.block}")
-        self.tracker.sendMessage(f"BLOCK_END")
+    # def block_cleanup(self):
+    #     """ Logs the end of a block and shows message about the remaining blocks"""
 
-        # Turn everything off
-        self.clear_screen()
-        # clear the host screen
-        self.tracker.sendCommand('clear_screen 0')
+    #     # Log the end of the block
+    #     self.log_section("Block", "end")
+    #     self.tracker.sendMessage(f"BLOCKID_{self.block}")
+    #     self.tracker.sendMessage(f"BLOCK_END")
 
-        # Get the number of all blocks for this task
-        n_blocks = int(self.TASKS[self.task]["blocks"])
+    #     # Turn everything off
+    #     self.clear_screen()
+    #     # clear the host screen
+    #     self.tracker.sendCommand('clear_screen 0')
 
-        # Show a message between the blocks
-        remain_blocks = n_blocks - self.block
-        btw_blocks_msg = f"You finished block number {self.block}.\n\n" \
-                         f"{remain_blocks} more block(s) remaining in this run.\n\n" \
-                         "When you are ready, press the SPACEBAR to continue to calibration."
-        self.show_msg(btw_blocks_msg)
+    #     # Get the number of all blocks for this task
+    #     n_blocks = int(self.TASKS[self.task]["blocks"])
 
-    def run_cleanup(self, remain_runs):
-        """ Housekeeping at the end of a run"""
+    #     # Show a message between the blocks
+    #     remain_blocks = n_blocks - self.block
+    #     btw_blocks_msg = f"You finished block number {self.block}.\n\n" \
+    #                      f"{remain_blocks} more block(s) remaining in this run.\n\n" \
+    #                      "When you are ready, press the SPACEBAR to continue to calibration."
+    #     self.show_msg(btw_blocks_msg)
 
-        # Log
-        self.log_section("Run", "end")
-        self.tracker.sendMessage(f"RUNID_{self.exp_run}")
-        self.tracker.sendMessage(f"RUN_END")
-        self.tracker.sendMessage(f"TASKID_{self.task}")
-        self.tracker.sendMessage(f"TASK_END")
+    # def run_cleanup(self, remain_runs):
+    #     """ Housekeeping at the end of a run"""
 
-        # Turn everything off
-        self.clear_screen()
-        self.tracker.sendCommand('clear_screen 0')
+    #     # Log
+    #     self.log_section("Run", "end")
+    #     self.tracker.sendMessage(f"RUNID_{self.exp_run}")
+    #     self.tracker.sendMessage(f"RUN_END")
+    #     self.tracker.sendMessage(f"TASKID_{self.task}")
+    #     self.tracker.sendMessage(f"TASK_END")
 
-        # Show an info message
-        btw_msg = f"\U00002705 You finished run number {self.run} of the experiment \U00002705\n\n"
-        if not self.practice:
-            btw_msg += f"There are {remain_runs} run remaining!\n\n"
-            btw_msg += "When you are ready, press the SPACEBAR to continue to calibration!"
+    #     # Turn everything off
+    #     self.clear_screen()
+    #     self.tracker.sendCommand('clear_screen 0')
 
-        end_msg = "\U0000235F\U0000235F\U0000235F \n\n"
-        end_msg += "Experiment ended! Thank you for your participation :-)\n\n"
-        end_msg += "\U0000235F\U0000235F\U0000235F"
+    #     # Show an info message
+    #     btw_msg = f"\U00002705 You finished run number {self.run} of the experiment \U00002705\n\n"
+    #     if not self.practice:
+    #         btw_msg += f"There are {remain_runs} run remaining!\n\n"
+    #         btw_msg += "When you are ready, press the SPACEBAR to continue to calibration!"
 
-        # Terminate the tracker on the last run
-        if remain_runs:
-            self.show_msg(btw_msg, wait_for_keypress=False)
-            self.terminate_tracker(end=False)
-        else:
-            self.show_msg(end_msg, wait_for_keypress=False)
-            self.terminate_tracker(end=True)
+    #     end_msg = "\U0000235F\U0000235F\U0000235F \n\n"
+    #     end_msg += "Experiment ended! Thank you for your participation :-)\n\n"
+    #     end_msg += "\U0000235F\U0000235F\U0000235F"
 
-    def save_run_data(self, blocks: list, col_names: list):
-        """
-        Saves all the blocks and logs to disk.
+    #     # Terminate the tracker on the last run
+    #     if remain_runs:
+    #         self.show_msg(btw_msg, wait_for_keypress=False)
+    #         self.terminate_tracker(end=False)
+    #     else:
+    #         self.show_msg(end_msg, wait_for_keypress=False)
+    #         self.terminate_tracker(end=True)
 
-        Parameters
-        ----------
-        blocks : list
-            All numpy arrays that contain the experiment data
+    # def save_run_data(self, blocks: list, col_names: list):
+    #     """
+    #     Saves all the blocks and logs to disk.
 
-        col_names : list
-            Column names for each trial block
+    #     Parameters
+    #     ----------
+    #     blocks : list
+    #         All numpy arrays that contain the experiment data
 
-        """
-        # Compile all blocks into one giant array
-        exp_data = np.concatenate(blocks)
+    #     col_names : list
+    #         Column names for each trial block
 
-        # Make a data frame
-        pd_file = str(self.files["run"]) + '.csv'
-        df = pd.DataFrame(exp_data, columns=col_names)
+    #     """
+    #     # Compile all blocks into one giant array
+    #     exp_data = np.concatenate(blocks)
 
-        # Save it
-        df.to_csv(pd_file, sep=',', index=False)
+    #     # Make a data frame
+    #     pd_file = str(self.files["run"]) + '.csv'
+    #     df = pd.DataFrame(exp_data, columns=col_names)
 
-        # Save the log files
-        # logs are in a tuple (or list) with the first item being the log level and the second one the log file
-        # self.logs["task"].write(self.files["run_log"])
-        # get rid of this log file
-        logging.flush()
-        logging.root.removeTarget(self.logs["task"])
+    #     # Save it
+    #     df.to_csv(pd_file, sep=',', index=False)
+
+    #     # Save the log files
+    #     # logs are in a tuple (or list) with the first item being the log level and the second one the log file
+    #     # self.logs["task"].write(self.files["run_log"])
+    #     # get rid of this log file
+    #     logging.flush()
+    #     logging.root.removeTarget(self.logs["task"])
