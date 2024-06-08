@@ -18,7 +18,7 @@
 #
 # ======================================================================================== #
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, CheckConstraint, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, CheckConstraint, UniqueConstraint, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -39,8 +39,8 @@ class Author(Base):
     """
     __tablename__ = 'authors'
     id = Column(Integer, primary_key=True)
+    email = Column(String, nullable=False, unique=True)
     name = Column(String)
-    email = Column(String)
     affiliation = Column(String)
     location = Column(String)
 
@@ -77,9 +77,9 @@ class Experiment(Base):
     __tablename__ = 'experiments'
 
     id = Column(Integer, primary_key=True)
-    title = Column(String)
-    shorthand = Column(String)
+    title = Column(String, nullable=False)
     repository = Column(String)
+    shorthand = Column(String)
     experiment_type = Column(String)
     version = Column(String)
     description = Column(String)
@@ -90,12 +90,12 @@ class Experiment(Base):
     authors = relationship('Author', secondary='experiment_authors', back_populates='experiments')
     subjects = relationship('Subject', back_populates='experiments')
     directories = relationship('Directory', back_populates='experiment')
-    files = relationship('File', back_populates='experiment')
 
     __table_args__ = (
         CheckConstraint("n_subjects > 0", name="n_subjects_check"),
         CheckConstraint("n_sessions > 0", name="n_sessions_check"),
-        CheckConstraint("experiment_type in ('Behavioral', 'EyeTracking', 'Electrophysiology')", name="type_check")
+        CheckConstraint("experiment_type in ('Behavioral', 'EyeTracking', 'Electrophysiology')", name="type_check"),
+        UniqueConstraint('title', 'repository', name='unique_experiment')
     )
 
     def __repr__(self):
@@ -114,8 +114,8 @@ class Directory(Base):
     __tablename__ = 'directories'
 
     id = Column(Integer, primary_key=True)
+    path = Column(String, nullable=False, unique=True)
     name = Column(String)
-    path = Column(String)
 
     # Parents
     experiment_id = Column(Integer, ForeignKey('experiments.id'), nullable=False)
@@ -141,13 +141,10 @@ class File(Base):
     __tablename__ = 'files'
 
     id = Column(Integer, primary_key=True)
+    path = Column(String, nullable=False, unique=True)
     name = Column(String)
-    path = Column(String)
-    size = Column(Integer)
 
     # Parents
-    experiment_id = Column(Integer, ForeignKey('experiments.id'), nullable=False)
-    experiment = relationship('Experiment', back_populates='files')
     directory_id = Column(Integer, ForeignKey('directories.id'), nullable=False)
     directory = relationship('Directory', back_populates='files')
 
@@ -197,7 +194,8 @@ class Subject(Base):
         CheckConstraint("gender in ('Male', 'Female', 'NB')", name="gender_check"),
         CheckConstraint("vision in ('Normal', 'Corrected', 'Impaired')", name="vision_check"),
         CheckConstraint("dominant_eye in ('Right', 'Left')", name="dominant_eye_check"),
-        CheckConstraint("dominant_hand in ('Right', 'Left', 'Both')", name="dominant_hand_check")
+        CheckConstraint("dominant_hand in ('Right', 'Left', 'Both')", name="dominant_hand_check"),
+        UniqueConstraint('initials', 'age', 'gender', name='unique_subject')
     )
 
     def __repr__(self):
@@ -218,7 +216,7 @@ class Task(Base):
     __tablename__ = 'tasks'
 
     id = Column(Integer, primary_key=True)
-    name = Column(String)
+    name = Column(String, unique=True)
     parameters = Column(String, nullable=False)
     description = Column(String)
     created_at = Column(DateTime, default=datetime.now)
@@ -260,6 +258,10 @@ class Stage(Base):
     task = relationship('Task', back_populates='stages')
     blocks = relationship('Block', back_populates='stage')
 
+    __table_args__ = (
+        UniqueConstraint('order', "task_id", name='unique_stage')
+    )
+
     def __repr__(self):
         return f'<Stage(id={self.id}, name={self.name}, description={self.description}, order={self.order})>'
 
@@ -281,6 +283,10 @@ class Block(Base):
     stage_id = Column(Integer, ForeignKey('stages.id'), nullable=False)
     stage = relationship('Stage', back_populates='blocks')
     trials = relationship('Trial', back_populates='block')
+
+    __table_args__ = (
+        UniqueConstraint('order', 'stage_id', name='unique_block')
+    )
 
     def __repr__(self):
         return f'<Block(id={self.id}, order={self.order})>'
@@ -308,6 +314,10 @@ class Trial(Base):
     eyetracking_samples = relationship('EyeTrackingSample', back_populates='trial')
     ephys_samples = relationship('EphysSample', back_populates='trial')
 
+    __table_args__ = (
+        UniqueConstraint('order', 'block_id', name='unique_trial')
+    )
+
     def __repr__(self):
         return f'<Trial(id={self.id}, order={self.order})>'
 
@@ -328,6 +338,8 @@ class Stimulus(Base):
     # Relationships
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=False)
     trial = relationship('Trial', back_populates='stimuli')
+
+    
 
     def __repr__(self):
         return f'<Stimulus(id={self.id}, name={self.name})>'

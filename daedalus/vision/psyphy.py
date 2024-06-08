@@ -32,10 +32,11 @@ import logging
 from daedalus import log_handler, utils
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from database import (
-    Base, Subject, Experiment, Author, ExperimentAuthor,
-    Task, Stage, Block, Trial, Stimulus, BehavioralResponse
+    Base, Author, ExperimentAuthor, Experiment, Directory, File,
+    Subject, Task, Stage, Block, Trial, Stimulus, BehavioralResponse
 )
 
 
@@ -76,6 +77,7 @@ class PsychoPhysicsExperiment:
 
         # Load config
         self.settings = utils.read_config(self.files["settings"])
+        # easier access to the platform settings
         self.platform_settings = self.settings["Platforms"][self.platform]
         self.exp_params = utils.read_config(self.files["experiment_params"])
         self.stim_params = utils.read_config(self.files["stimuli_params"])
@@ -84,13 +86,26 @@ class PsychoPhysicsExperiment:
         self.monitor_params = mon_params[monitor_name]
 
         # Database
-        self.db = PsychoPhysicsDatabase(self.files["database"])
-        self.db
+        self.db = None
+        self.logger = None
+        self.monitor = None
+        self.window = None
+        self.clocks = None
 
-        # Other attributes
-        self.logger = self.init_logging()
-        self.monitor, self.window = self.make_display()
-        self.clocks = self.init_clocks()
+    def init_database(self):
+        """
+        Initialize the database for the experiment.
+        """
+        self.db = PsychoPhysicsDatabase(self.files["database"], self.settings["Study"]["ID"])
+        self.db.add_experiment(
+            title=self.settings["Study"]["Title"],
+            shorthand=self.settings["Study"]["Shorthand"],
+            repository=self.settings["Study"]["Repository"],
+            version=self.version,
+            description=self.settings["Study"]["Description"],
+            n_subjects=self.exp_params["NumSubjects"],
+            n_sessions=self.exp_params["NumSessions"]
+        )
 
     def init_clocks(self):
         """
@@ -225,12 +240,11 @@ class PsychoPhysicsExperiment:
         Makes psychopy monitor and window objects to be used in the experiment. Relies on the name of the monitor
         specified in confing/parameters.json and monitor specification found in config/monitors.json
 
-        Returns
-        -------
-        tuple
-            mon : psychopy.monitors.Monitor
+        Returns:
+            tuple
+                mon : psychopy.monitors.Monitor
 
-            win : psychopy.visual.Window
+                win : psychopy.visual.Window
         """
         # Make the monitor object and set width, distance, and resolution
         monitor = monitors.Monitor(
@@ -711,8 +725,13 @@ class PsychoPhysicsDatabase:
             n_subjects=n_subjects,
             n_sessions=n_sessions
         )
-        session.add(experiment)
-        session.commit()
+        try:
+            session.add(experiment)
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            existing_exp = session.query(Experiment).filter_by(title=title, repository=repository).first()
+            return existing_exp.id
         return experiment.id
 
     def add_author(self, name, email, affiliation, location):
@@ -730,8 +749,12 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         author = Author(name=name, email=email, affiliation=affiliation, location=location)
-        session.add(author)
-        session.commit()
+        try:
+            session.add(author)
+            session.commit()
+        except IntegrityError:
+            existing_author = session.query(Author).filter_by(email=email).first()
+            return existing_author.id
         return author.id
 
     def add_experiment_author(self, experiment_id, author_id):
@@ -749,6 +772,50 @@ class PsychoPhysicsDatabase:
         experiment_author = ExperimentAuthor(experiment_id=experiment_id, author_id=author_id)
         session.add(experiment_author)
         session.commit()
+
+    def add_directory(self, name, path, experiment_id):
+        """
+        Add a new directory to the database.
+
+        Args:
+            name (str): The name of the directory.
+            path (str): The path of the directory.
+            experiment_id (int): The ID of the experiment.
+
+        Returns:
+            int: The ID of the added directory.
+        """
+        session = self.Session()
+        directory = Directory(name=name, path=path, experiment_id=experiment_id)
+        try:
+            session.add(directory)
+            session.commit()
+        except IntegrityError:
+            existing_dir = session.query(Directory).filter_by(path=path).first()
+            return existing_dir.id
+        return directory.id
+
+    def add_file(self, name, path, directory_id):
+        """
+        Add a new file to the database.
+
+        Args:
+            name (str): The name of the file.
+            path (str): The path of the file.
+            directory_id (int): The ID of the directory.
+
+        Returns:
+            int: The ID of the added file.
+        """
+        session = self.Session()
+        file = File(name=name, path=path, directory_id=directory_id)
+        try:
+            session.add(file)
+            session.commit()
+        except IntegrityError:
+            existing_file = session.query(File).filter_by(path=path).first()
+            return existing_file.id
+        return file.id
 
     def add_subject(self, initials, age, gender, vision, **kwargs):
         """
@@ -776,8 +843,12 @@ class PsychoPhysicsDatabase:
             vision=vision,
             **kwargs
         )
-        session.add(subject)
-        session.commit()
+        try:
+            session.add(subject)
+            session.commit()
+        except IntegrityError:
+            existing_subject = session.query(Subject).filter_by(initials=initials, age=age, gender=gender).first()
+            return existing_subject.id
         return subject.id
 
     def add_task(self, name, parameters, description, experiment_id):
@@ -795,8 +866,12 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         task = Task(name=name, parameters=parameters, description=description, experiment_id=experiment_id)
-        session.add(task)
-        session.commit()
+        try:
+            session.add(task)
+            session.commit()
+        except IntegrityError:
+            existing_task = session.query(Task).filter_by(name=name).first()
+            return existing_task.id
         return task.id
 
     def add_stage(self, name, order, description, task_id):
@@ -814,8 +889,12 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         stage = Stage(name=name, order=order, description=description, task_id=task_id)
-        session.add(stage)
-        session.commit()
+        try:
+            session.add(stage)
+            session.commit()
+        except IntegrityError:
+            existing_stage = session.query(Stage).filter_by(order=order, task_id="task_id").first()
+            return existing_stage.id
         return stage.id
 
     def add_block(self, order, stage_id):
@@ -831,8 +910,12 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         block = Block(order=order, stage_id=stage_id)
-        session.add(block)
-        session.commit()
+        try:
+            session.add(block)
+            session.commit()
+        except IntegrityError:
+            existing_block = session.query(Block).filter_by(order=order, stage_id=stage_id).first()
+            return existing_block.id
         return block.id
 
     def add_trial(self, order, block_id):
@@ -848,8 +931,12 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         trial = Trial(order=order, block_id=block_id)
-        session.add(trial)
-        session.commit()
+        try:
+            session.add(trial)
+            session.commit()
+        except IntegrityError:
+            existing_trial = session.query(Trial).filter_by(order=order, block_id=block_id).first()
+            return existing_trial.id
         return trial.id
 
     def add_stimulus(self, name, trial_id):
