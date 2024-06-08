@@ -313,7 +313,7 @@ class MyeLink:
 
         return data
 
-    def online_event_monitor(self, events_of_interest: dict = None):
+    def detect_event_online(self, events_of_interest: dict = None):
         """
         Find an event in the Eyelink tracker
 
@@ -354,13 +354,13 @@ class MyeLink:
                 if data.getEye() == self.tracked_eye:
                     for etype, ecode in events_of_interest.items():
                         if buffer_item == ecode:
-                            info[etype] = self.get_monitor_func(etype)(data)
+                            info[etype] = self._get_detect_func(etype)(data)
                         else:
                             pass
 
         return info
 
-    def get_monitor_func(self, event_type: str):
+    def _get_detect_func(self, event_type: str):
         """
         Get the function to monitor the event type
 
@@ -380,7 +380,7 @@ class MyeLink:
         else:
             raise NotImplementedError(f"Event type {event_type} is not implemented.")
 
-    def online_event_processor(self, event_type: str):
+    def process_event_online(self, event_type: str):
         """
         Process the events in the Eyelink tracker
 
@@ -402,7 +402,7 @@ class MyeLink:
 
             if self.eyelink.breakPressed():
                 return "User terminated the task."
-            
+
             buffer_item = self.eyelink.getNextData()
             if not buffer_item:
                 break
@@ -416,11 +416,11 @@ class MyeLink:
 
                 # Get the event data
                 if data is not None:
-                    info.append(self.get_process_func(event_type)(data))
+                    info.append(self._get_process_func(event_type)(data))
 
         return info
 
-    def get_process_func(self, event_type: str):
+    def _get_process_func(self, event_type: str):
         """
         Get the function to process the event type
 
@@ -437,7 +437,7 @@ class MyeLink:
         else:
             raise NotImplementedError(f"Event type {event_type} is not implemented.")
 
-    def online_sample_processor(self):
+    def process_samples_online(self):
         """
         Process samples for each event in the link buffer (typically called at the end of each trial)
 

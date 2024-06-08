@@ -31,8 +31,15 @@ from psychopy.iohub.devices import Computer
 import logging
 from daedalus import log_handler, utils
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from database import (
+    Base, Subject, Experiment, Author, ExperimentAuthor,
+    Task, Stage, Block, Trial, Stimulus, BehavioralResponse
+)
 
-class Psychophysics:
+
+class PsychoPhysicsExperiment:
     """
     Template experiment with basic functionality.
 
@@ -75,6 +82,10 @@ class Psychophysics:
         monitor_name = self.platfrom_settings["Monitor"]
         mon_params = utils.read_config(self.files["monitors"])
         self.monitor_params = mon_params[monitor_name]
+
+        # Database
+        self.db = PsychoPhysicsDatabase(self.files["database"])
+        self.db
 
         # Other attributes
         self.logger = self.init_logging()
@@ -141,18 +152,28 @@ class Psychophysics:
         files = dict()
 
         # Config files
-        files["settings"] = str(self.directories["config"] / "settings.yaml")
+        set_file = self.directories["config"] / "settings.yaml"
+        if not set_file.exists():
+            raise FileNotFoundError(f"Settings file not found: {set_file}")
+        files["settings"] = str(set_file)
 
         # Parameters files
         param_files = Path(self.directories["config"]).glob("*.yaml")
         for file in param_files:
-            if file != "settings.yaml":
+            if file.stem != "settings":
                 files[f"{file.stem}_params"] = str(file)
 
+        # sqlite database
+        db_file = self.directories["data"] / f"{self.name}_v{self.version}.db"
+        if not db_file.exists():
+            db_file.touch()
+        files["database"] = str(db_file)
+
         # Participants file
-        files["participants"] = str(self.directories["data"] / "participants.tsv")
-        if not Path(files["participants"]).exists():
-            self.init_participants_file()
+        # part_file = self.directories["data"] / "participants.tsv"
+        # if not part_file.exists():
+        #     self.init_participants_file()
+        # files["participants"] = str(part_file)
 
         # Modules
         modules = self.self.platfrom_settings["Modules"]
@@ -317,7 +338,7 @@ class Psychophysics:
 
         # Add fields
         dlg.addField("PID", choices=available_pids)
-        required_info = self.exp_params["Info"]["Subject"]
+        required_info = self.exp_params["SubjectInfo"]
         for field in required_info:
             if isinstance(required_info[field], list):
                 dlg.addField(field, choices=required_info[field])
@@ -376,7 +397,7 @@ class Psychophysics:
         else:
             raise ValueError("Subject loadation cancelled.")
 
-    def choose_task(self, subj_info: pd.DataFrame):
+    def task_selection_gui(self, subj_info: pd.DataFrame):
         """
         GUI for choosing the task.
 
@@ -401,7 +422,7 @@ class Psychophysics:
         dlg.addFixedField("Version", self.version)
 
         # Add the subject info
-        valid_info_fields = ["PID"] + list(self.exp_params["Info"]["Subject"].keys())
+        valid_info_fields = ["PID"] + list(self.exp_params["SubjectInfo"].keys())
         for field in subj_info.columns:
             if field in valid_info_fields:
                 dlg.addFixedField(field, subj_info[field].values[0])
@@ -445,15 +466,7 @@ class Psychophysics:
         Returns:
             pd.DataFrame: The participants file as a pandas DataFrame.
         """
-        # Make a quick check here
-        file = self.files.get("participants")
-        if file is None:
-            self.files["participants"] = self.directories["data"] / "participants.tsv"
-        else:
-            if not file.exists():
-                self.init_participants_file()
-            else:
-                return pd.read_csv(file, sep="\t")
+        return pd.read_csv(self.files["participants"], sep="\t")
 
     def init_participants_file(self):
         """
@@ -465,7 +478,7 @@ class Psychophysics:
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.files["participants"], sep="\t", index=False)
 
-    def save_subject_info(self, subject_info):
+    def save_participants_file(self, subject_info):
         """
         Saves the subject info to the participants file.
 
@@ -642,3 +655,419 @@ class Psychophysics:
     def ms2fr(self, duration: float):
         """ Converts durations from ms to display frames"""
         return np.ceil(duration * self.params["refresh_rate"] / 1000).astype(int)
+
+
+class PsychoPhysicsDatabase:
+    """
+    Base class for handling the psychophysics database operations.
+
+    Attributes:
+        db_path (str): The path to the SQLite database file.
+        engine: The SQLAlchemy engine instance.
+        Session: The SQLAlchemy session maker.
+    """
+    def __init__(self, db_path, exp_id):
+        """
+        Initialize the database connection and create tables.
+
+        Args:
+            db_path (str): Path to the SQLite database file.
+        """
+        db_url = f"sqlite:///{db_path}"
+
+        self.engine = create_engine(db_url)
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine)
+
+        self.exp_type = "Psychophysics"
+        self.exp_id = exp_id
+
+    def add_experiment(self, title, shorthand, repository, version, description, n_subjects, n_sessions):
+        """
+        Add a new experiment to the database.
+
+        Args:
+            title (str): The title of the experiment.
+            shorthand (str): The shorthand name of the experiment.
+            repository (str): The repository link of the experiment.
+            experiment_type (str): The type of the experiment.
+            version (str): The version of the experiment.
+            description (str): The description of the experiment.
+            n_subjects (int): The number of subjects in the experiment.
+            n_sessions (int): The number of sessions in the experiment.
+
+        Returns:
+            int: The ID of the added experiment.
+        """
+        session = self.Session()
+        experiment = Experiment(
+            experiment_type=self.exp_type,
+            id=self.exp_id,
+            title=title,
+            shorthand=shorthand,
+            repository=repository,
+            version=version,
+            description=description,
+            n_subjects=n_subjects,
+            n_sessions=n_sessions
+        )
+        session.add(experiment)
+        session.commit()
+        return experiment.id
+
+    def add_author(self, name, email, affiliation, location):
+        """
+        Add a new author to the database.
+
+        Args:
+            name (str): The name of the author.
+            email (str): The email of the author.
+            affiliation (str): The affiliation of the author.
+            location (str): The location of the author.
+
+        Returns:
+            int: The ID of the added author.
+        """
+        session = self.Session()
+        author = Author(name=name, email=email, affiliation=affiliation, location=location)
+        session.add(author)
+        session.commit()
+        return author.id
+
+    def add_experiment_author(self, experiment_id, author_id):
+        """
+        Add an author to an experiment (many-to-many relationship).
+
+        Args:
+            experiment_id (int): The ID of the experiment.
+            author_id (int): The ID of the author.
+
+        Returns:
+            None
+        """
+        session = self.Session()
+        experiment_author = ExperimentAuthor(experiment_id=experiment_id, author_id=author_id)
+        session.add(experiment_author)
+        session.commit()
+
+    def add_subject(self, initials, age, gender, vision, **kwargs):
+        """
+        Add a new subject to the database.
+
+        Args:
+            initials (str): The initials of the subject.
+            age (int): The age of the subject.
+            gender (str): The gender of the subject.
+            vision (str): The vision status of the subject.
+            name (str, optional): The name of the subject.
+            netid (str, optional): The network ID of the subject.
+            email (str, optional): The email of the subject.
+            dominant_eye (str, optional): The dominant eye of the subject.
+            dominant_hand (str, optional): The dominant hand of the subject.
+
+        Returns:
+            int: The ID of the added subject.
+        """
+        session = self.Session()
+        subject = Subject(
+            initials=initials,
+            age=age,
+            gender=gender,
+            vision=vision,
+            **kwargs
+        )
+        session.add(subject)
+        session.commit()
+        return subject.id
+
+    def add_task(self, name, parameters, description, experiment_id):
+        """
+        Add a new task to the database.
+
+        Args:
+            name (str): The name of the task.
+            parameters (str): The parameters of the task.
+            description (str): The description of the task.
+            experiment_id (int): The ID of the experiment.
+
+        Returns:
+            int: The ID of the added task.
+        """
+        session = self.Session()
+        task = Task(name=name, parameters=parameters, description=description, experiment_id=experiment_id)
+        session.add(task)
+        session.commit()
+        return task.id
+
+    def add_stage(self, name, order, description, task_id):
+        """
+        Add a new stage to the database.
+
+        Args:
+            name (str): The name of the stage.
+            order (int): The order of the stage.
+            description (str): The description of the stage.
+            task_id (int): The ID of the task.
+
+        Returns:
+            int: The ID of the added stage.
+        """
+        session = self.Session()
+        stage = Stage(name=name, order=order, description=description, task_id=task_id)
+        session.add(stage)
+        session.commit()
+        return stage.id
+
+    def add_block(self, order, stage_id):
+        """
+        Add a new block to the database.
+
+        Args:
+            order (int): The order of the block.
+            stage_id (int): The ID of the stage.
+
+        Returns:
+            int: The ID of the added block.
+        """
+        session = self.Session()
+        block = Block(order=order, stage_id=stage_id)
+        session.add(block)
+        session.commit()
+        return block.id
+
+    def add_trial(self, order, block_id):
+        """
+        Add a new trial to the database.
+
+        Args:
+            order (int): The order of the trial.
+            block_id (int): The ID of the block.
+
+        Returns:
+            int: The ID of the added trial.
+        """
+        session = self.Session()
+        trial = Trial(order=order, block_id=block_id)
+        session.add(trial)
+        session.commit()
+        return trial.id
+
+    def add_stimulus(self, name, trial_id):
+        """
+        Add a new stimulus to the database.
+
+        Args:
+            name (str): The name of the stimulus.
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            int: The ID of the added stimulus.
+        """
+        session = self.Session()
+        stimulus = Stimulus(name=name, trial_id=trial_id)
+        session.add(stimulus)
+        session.commit()
+        return stimulus.id
+
+    def add_behavioral_response(self, response, trial_id):
+        """
+        Add a new behavioral response to the database.
+
+        Args:
+            response (str): The behavioral response.
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            int: The ID of the added behavioral response.
+        """
+        session = self.Session()
+        behavioral_response = BehavioralResponse(response=response, trial_id=trial_id)
+        session.add(behavioral_response)
+        session.commit()
+        return behavioral_response.id
+
+    def get_experiment(self):
+        """
+        Retrieve all experiments from the database.
+
+        Returns:
+            list: List of experiments.
+        """
+        session = self.Session()
+        return session.query(Experiment).first()
+
+    def get_subjects(self):
+        """
+        Retrieve all subjects from the database.
+
+        Returns:
+            list: List of subjects.
+        """
+        session = self.Session()
+        return session.query(Subject).all()
+
+    def get_tasks(self, experiment_id):
+        """
+        Retrieve all tasks for a given experiment.
+
+        Args:
+            experiment_id (int): The ID of the experiment.
+
+        Returns:
+            list: List of tasks.
+        """
+        session = self.Session()
+        return session.query(Task).filter_by(experiment_id=experiment_id).all()
+
+    def get_stages(self, task_id):
+        """
+        Retrieve all stages for a given task.
+
+        Args:
+            task_id (int): The ID of the task.
+
+        Returns:
+            list: List of stages.
+        """
+        session = self.Session()
+        return session.query(Stage).filter_by(task_id=task_id).all()
+
+    def get_blocks(self, stage_id):
+        """
+        Retrieve all blocks for a given stage.
+
+        Args:
+            stage_id (int): The ID of the stage.
+
+        Returns:
+            list: List of blocks.
+        """
+        session = self.Session()
+        return session.query(Block).filter_by(stage_id=stage_id).all()
+
+    def get_trials(self, block_id):
+        """
+        Retrieve all trials for a given block.
+
+        Args:
+            block_id (int): The ID of the block.
+
+        Returns:
+            list: List of trials.
+        """
+        session = self.Session()
+        return session.query(Trial).filter_by(block_id=block_id).all()
+
+    def get_stimuli(self, trial_id):
+        """
+        Retrieve all stimuli for a given trial.
+
+        Args:
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            list: List of stimuli.
+        """
+        session = self.Session()
+        return session.query(Stimulus).filter_by(trial_id=trial_id).all()
+
+    def get_behavioral_responses(self, trial_id):
+        """
+        Retrieve all behavioral responses for a given trial.
+
+        Args:
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            list: List of behavioral responses.
+        """
+        session = self.Session()
+        return session.query(BehavioralResponse).filter_by(trial_id=trial_id).all()
+
+    @staticmethod
+    def get_table_fields(model_class):
+        """
+        Get all fields (column names) in a table.
+
+        Args:
+            model_class (Base): The SQLAlchemy model class for the table.
+
+        Returns:
+            list: List of column names.
+        """
+        return model_class.__table__.columns.keys()
+
+    def export_subject_data(self, subject_id, file_path):
+        """
+        Export data for a specific block to a CSV or TSV file.
+
+        Args:
+            block_id (int): The ID of the block.
+            file_path (str): The path to the exported file.
+
+        Returns:
+            str: The path to the exported file.
+        """
+        session = self.Session()
+        exp = session.query(Experiment).filter_by(id=self.experiment_id).first()
+        subject = session.query(Subject).filter_by(id=subject_id).first()
+        tasks = session.query(Task).filter_by(subject_id=subject.id).all()
+
+        if not tasks:
+            return None
+
+        # Collect data
+        data = []
+        for task in tasks:
+            stages = session.query(Stage).filter_by(task_id=task.id).all()
+            for stage in stages:
+                blocks = session.query(Block).filter_by(stage_id=stage.id).all()
+                for block in blocks:
+                    trials = session.query(Trial).filter_by(block_id=block.id).all()
+                    for trial in trials:
+                        stimuli = session.query(Stimulus).filter_by(trial_id=trial.id).all()
+                        for stimulus in stimuli:
+
+                            # Information
+                            trial_data = dict(
+                                ExperimentName=exp.title,
+                                ExperimentVersion=exp.version,
+                                SubjectID=subject.id,
+                                SubjectInitials=subject.initials,
+                                TaskName=task.name,
+                                TaskDate=task.created_at,
+                                StageName=stage.name,
+                                StageNumber=stage.order,
+                                BlockNumber=block.order,
+                                TrialNumber=trial.order,
+                                StimulusName=stimulus.name
+                                )
+
+                            # Stimulus
+                            stimulus_fields = self.get_table_fields(Stimulus)
+                            for field in stimulus_fields:
+                                if field not in ['id', 'trial_id', 'trial']:
+                                    trial_data[field] = getattr(stimulus, field)
+
+                            # Response
+                            behavioral_response = session.query(BehavioralResponse).filter_by(trial_id=trial.id).first()
+                            trial_data['Response'] = behavioral_response.choice
+
+                            # Append to data
+                            data.append(trial_data)
+
+        # Create DataFrame
+        df = pd.DataFrame(data)
+
+        # Export to file
+        filename = Path(file_path) / f'subject-{subject_id:02d}_exp-{self.exp_id}.csv'
+        df.to_csv(filename, sep=',', index=False)
+
+        return filename
+
+    def close(self):
+        """
+        Close the database connection properly and save the database.
+        """
+        self.Session.close_all()
+        self.engine.dispose()

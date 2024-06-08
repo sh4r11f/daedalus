@@ -1,18 +1,7 @@
 {
 	"folders": [
 		{
-			"name": "daedalus",
 			"path": "."
-		},
-		{
-			"name": "psychopy",
-			"path": "../../tools/psychopy"
-		},
-		{
-			"path": "../../AppData/Roaming/Python/Python310/site-packages/pylink"
-		},
-		{
-			"path": "../../Dropbox (Dartmouth College)/Resources/Eye-tracking/SampleExperiments/Python/examples"
 		}
 	],
 	"settings": {}

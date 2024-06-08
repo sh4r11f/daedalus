@@ -19,11 +19,12 @@
 # ==================================================================================================== #
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
-from .psyphy import Psychophysics
 from .EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
+from .psyphy import PsychoPhysicsExperiment, PsychoPhysicsDatabase
+from .database import EyeTrackingEvent, EyeTrackingSample
 
 
-class Eyetracking(Psychophysics):
+class Eyetracking(PsychoPhysicsExperiment):
     """
     Eyetracking class for running experiments.
 
@@ -104,6 +105,96 @@ class Eyetracking(Psychophysics):
 
         return genv
 
+
+class EyeTrackingDatabase(PsychoPhysicsDatabase):
+    """
+    Derived class for handling eye-tracking specific database operations.
+    """
+    def __init__(self, db_path):
+        """
+        Initialize the database connection and create tables for eye-tracking data.
+        """
+        super().__init__(db_path)
+        self.exp_type = "eyetracking"
+
+    def add_eye_tracking_event(self, trial_id, event_type, time_start, time_end, **kwargs):
+        """
+        Add a new eye-tracking event to the database.
+
+        Args:
+            trial_id (int): The ID of the trial.
+            event_type (str): The type of the event.
+            time_start (float): The start time of the event.
+            time_end (float): The end time of the event.
+            duration (float): The duration of the event.
+            **kwargs: Additional optional parameters.
+
+        Returns:
+            int: The ID of the added eye-tracking event.
+        """
+        session = self.Session()
+        event = EyeTrackingEvent(
+            trial_id=trial_id,
+            event_type=event_type,
+            time_start=time_start,
+            time_end=time_end,
+            **kwargs
+        )
+        session.add(event)
+        session.commit()
+        return event.uid
+
+    def add_eye_tracking_sample(self, event_id, timestamp, gaze_x, gaze_y, ppd_x, ppd_y, pupil):
+        """
+        Add a new eye-tracking sample to the database.
+
+        Args:
+            event_id (int): The ID of the eye-tracking event.
+            timestamp (float): The timestamp of the sample.
+            gaze_x (float): The x-coordinate of the gaze.
+            gaze_y (float): The y-coordinate of the gaze.
+            ppd_x (float): The x-coordinate of the pupil position.
+            ppd_y (float): The y-coordinate of the pupil position.
+            pupil (float): The size of the pupil.
+            **kwargs: Additional optional parameters.
+
+        Returns:
+            int: The ID of the added eye-tracking sample.
+        """
+        session = self.Session()
+        sample = EyeTrackingSample(
+            event_id=event_id, timestamp=timestamp, gaze_x=gaze_x, gaze_y=gaze_y, ppd_x=ppd_x, ppd_y=ppd_y, pupil=pupil
+        )
+        session.add(sample)
+        session.commit()
+        return sample.uid
+
+    def get_eye_tracking_events(self, trial_id):
+        """
+        Retrieve all eye-tracking events for a given trial.
+
+        Args:
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            list: List of eye-tracking events.
+        """
+        session = self.Session()
+        return session.query(EyeTrackingEvent).filter_by(trial_id=trial_id).all()
+
+    def get_eye_tracking_samples(self, event_id):
+        """
+        Retrieve all eye-tracking samples for a given event.
+
+        Args:
+            event_id (int): The ID of the eye-tracking event.
+
+        Returns:
+            list: List of eye-tracking samples.
+        """
+        session = self.Session()
+        return session.query(EyeTrackingSample).filter_by(event_id=event_id).all()
+    
     # def run_calibration(self):
     #     """
     #     Calibrate the Eyelink 1000
