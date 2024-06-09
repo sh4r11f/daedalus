@@ -50,7 +50,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         # Tracker
         self.tracker_model = tracker_model
         self.tracker_params = utils.load_config(self.files["eyetrackers_params"])[self.tracker_model]
-        self.tracker = self.init_tracker()
+        self.tracker = None
 
     def init_tracker(self):
         """
@@ -59,13 +59,16 @@ class Eyetracking(PsychoPhysicsExperiment):
         Returns:
             MyeLink: The initialized eye tracker object.
         """
-        tracker = MyeLink(self.name, self.tracker_params, self.debug)
-        err = tracker.connect()
+        self.tracker = MyeLink(self.name, self.tracker_params, self.debug)
+        err = self.tracker.connect()
 
         if err is None:
-            return tracker
+            msg = f"(✓) Connected to {self.tracker_model} successfully."
         else:
-            raise RuntimeError(f"Error in connecting to the tracker: {err}")
+            self.logger.critical(f"Failed to connect to {self.tracker_model}: {err}")
+            msg = f"(✘) Failed to connect to {self.tracker_model}: {err}"
+
+        return msg
 
     def forge_graphics_env(self):
         """
@@ -104,6 +107,21 @@ class Eyetracking(PsychoPhysicsExperiment):
         genv.setDriftCorrectSounds("", "", "")
 
         return genv
+
+    def check_fixation_in_region(self, region, fixation_coords):
+        """
+        Checks if the gaze is fixed within a region for a certain duration.
+
+        Args:
+            region (list): The region to check for fixation.
+            duration (float): The duration of fixation required.
+            timeout (int): The timeout for the fixation check.
+
+        Returns:
+            bool: Whether the fixation was successful or not.
+        """
+        # Check fixation
+        pass
 
 
 class EyeTrackingDatabase(PsychoPhysicsDatabase):

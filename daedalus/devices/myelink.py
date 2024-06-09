@@ -212,7 +212,9 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
+        fix_x, fix_y = int(fix_x), int(fix_y)
         error = None
+
         while True:
             # terminate the task if no longer connected to the tracker or
             # user pressed Ctrl-C to terminate the task
@@ -333,7 +335,7 @@ class MyeLink:
             }
 
         # Initialize the event information
-        info = {key: None for key in events_of_interest.keys()}
+        info = {key: [] for key in events_of_interest.keys()}
 
         # Go through the samples and events in the buffer
         while True:
@@ -354,7 +356,7 @@ class MyeLink:
                 if data.getEye() == self.tracked_eye:
                     for etype, ecode in events_of_interest.items():
                         if buffer_item == ecode:
-                            info[etype] = self._get_detect_func(etype)(data)
+                            info[etype].append(self._get_detect_func(etype)(data))
                         else:
                             pass
 
@@ -368,7 +370,7 @@ class MyeLink:
             event_type (str): The type of event to monitor.
         """
         if event_type == "fixation_start":
-            return self.detect_fixation_end_event
+            return self.detect_fixation_start_event
         elif event_type == "fixation_end":
             return self.detect_fixation_end_event
         elif event_type == "fixation_update":

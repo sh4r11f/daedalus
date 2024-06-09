@@ -88,8 +88,8 @@ class PsychoPhysicsExperiment:
         self.monitor_params = mon_params[monitor_name]
 
         # Database
-        self.db = None
         self.logger = None
+        self.db = None
         self.monitor = None
         self.window = None
         self.clocks = None
@@ -113,12 +113,11 @@ class PsychoPhysicsExperiment:
         """
         Set up the clocks for the experiment.
         """
-        clocks = {
+        self.clocks = {
             "global": core.Clock(),
             "block": core.Clock(),
             "trial": core.Clock()
         }
-        return clocks
 
     def init_dirs_dict(self) -> Dict:
         """
@@ -169,32 +168,32 @@ class PsychoPhysicsExperiment:
         set_file = self.directories["config"] / "settings.yaml"
         if not set_file.exists():
             raise FileNotFoundError(f"Settings file not found: {set_file}")
-        files["settings"] = str(set_file)
+        files["settings"] = set_file
 
         # Parameters files
         param_files = Path(self.directories["config"]).glob("*.yaml")
         for file in param_files:
             if file.stem != "settings":
-                files[f"{file.stem}_params"] = str(file)
+                files[f"{file.stem}_params"] = file
 
         # sqlite database
         db_file = self.directories["data"] / f"{self.name}_v{self.version}.db"
         if not db_file.exists():
             db_file.touch()
-        files["database"] = str(db_file)
+        files["database"] = db_file
 
         # Participants file
         part_file = self.directories["data"] / "participants.tsv"
         if not part_file.exists():
             self.init_participants_file()
-        files["participants"] = str(part_file)
+        files["participants"] = part_file
 
         # Modules
         modules = self.self.platfrom_settings["Modules"]
         for mod in modules:
             name = mod["name"]
             path = mod["path"]
-            files[name] = path
+            files[name] = Path(path)
 
         return files
 
@@ -206,90 +205,100 @@ class PsychoPhysicsExperiment:
             logging.Logger: The logger object.
         """
         # Make the logger object
-        logger = log_handler.get_logger(self.name)
+        self.logger = log_handler.get_logger(self.name)
 
         # Log file
-        log_file = self.directories["log"] / f"exp_{self.name}_v{self.version}.log"
-        self.files["log"] = str(log_file)
-        if log_file.exists():
+        if self.files["subj_log"].exists():
             # clear the log file
-            log_file.unlink()
+            self.files["subj_log"].unlink()
         # create the log file
-        log_file.touch()
+        self.files["subj_log"].touch()
 
         # Add new handlers
-        log_handler.add_handlers(logger, log_file)
+        log_handler.add_handlers(self.logger, self.files["subj_log"])
 
         # Set the level of the handlers
         if self.debug:
-            log_handler.set_handlers_level(logger.StreamHandler, logging.DEBUG)
+            log_handler.set_handlers_level(self.logger.StreamHandler, logging.DEBUG)
 
         # First log
-        logger.info("Greetings, my friend! I'm your experiment logger for the day.")
-        logger.info(f"Our today's experiment is: {self.name}.")
-        logger.info("Here are some settings we're working with: ")
+        self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
+        self.logger.info(f"Our today's experiment is: {self.name}.")
+        self.logger.info("Here are some settings we're working with: ")
         for key, value in self.settings["Study"].items():
-            logger.info(f"\t\t -{key}: {value}")
+            self.logger.info(f"\t\t -{key}: {value}")
         for key, value in self.platform_settings.items():
-            logger.info(f"\t\t -{key}: {value}")
-        logger.info("Let's get started!")
-        logger.info("-" * 80)
+            self.logger.info(f"\t\t -{key}: {value}")
+        self.logger.info("Let's get started!")
+        self.logger.info("-" * 80)
 
-        return logger
-
-    def init_subject_dirs(self, subj_id: str, task_name: str):
+    def _fix_id(self, id):
         """
-        Add directories for the subject.
+        Fix the ID of the subject or session to be a string with two digits.
 
         Args:
-            subj_id (str): Subject ID
-            task_name (str): Task name
+            id (int): The ID to be fixed.
+
+        Returns:
+            str: The fixed ID.
         """
+        if isinstance(id, int):
+            fixed = f"{id:02d}"
+        elif isinstance(id, str) and len(id) == 1:
+            fixed = f"0{id}"
+        return fixed
+
+    def _get_tasks(self, ses_id):
+        """
+        Get the tasks for the session.
+
+        Args:
+            ses_id (int): Session number.
+
+        Returns:
+            list: List of tasks for the session.
+        """
+        return utils.find_in_configs(self.exp_params["Tasks"], "Session", ses_id)["tasks"]
+
+    def setup_subject_dirs_files(self, subj_id, ses_id):
+        """
+        Add directories and files for a subject in a session.
+
+        Args:
+            subj_id (int or str): Subject ID
+            ses_id (int or str): Session number
+        """
+        # Fix the IDs
+        subj_id = self._fix_id(subj_id)
+        ses_id = self._fix_id(ses_id)
+
         # Subject directory
-        subj_dir = self.directories["data"] / f"sub-{subj_id}"
+        subj_dir = self.dirs["data"] / f"sub-{subj_id}"
         subj_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["subject"] = subj_dir
+        self.dirs["subj_data"] = subj_dir
 
         # Log directory
-        log_dir = subj_dir / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["log"] = log_dir
+        subj_log_dir = self.dirs["log"] / f"sub-{subj_id}"
+        subj_log_dir.mkdir(parents=True, exist_ok=True)
+        # Log file
+        log_file = subj_log_dir / f"sub-{subj_id}_ses-{ses_id}_exp-{self.name}_v{self.version}.log"
+        self.dirs["subj_log"] = subj_log_dir
+        self.files["subj_log"] = str(log_file)
 
         # Session directory
-        for ses_num in range(1, self.exp_params["NumSessions"] + 1):
-            ses_dir = subj_dir / f"ses-{ses_num}"
-            ses_dir.mkdir(parents=True, exist_ok=True)
-            self.dirs["session"] = ses_dir
+        ses_dir = subj_dir / f"ses-{ses_id}"
+        ses_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["session_data"] = ses_dir
 
-            # Behavioral directory
-            beh_dir = ses_dir / "behavioral"
-            beh_dir.mkdir(parents=True, exist_ok=True)
-            self.dirs["behavioral"] = beh_dir
+        # Behavioral directory
+        beh_dir = ses_dir / "behavioral"
+        beh_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["behavioral_data"] = beh_dir
 
-            # Stimuli directory
-            stim_dir = ses_dir / "stimuli"
-            stim_dir.mkdir(parents=True, exist_ok=True)
-            self.dirs["stimuli"] = stim_dir
-
-    def init_subject_files(self, subj_id: str, task_name: str):
-        """
-        Add files for the subject.
-
-        Args:
-            subj_id (str): Subject ID
-            task_name (str): Task name
-        """
-        # Stimuli file
-        stim_file = self.directories["stimuli"] / f"sub-{subj_id}_task-{task_name}_stimuli.csv"
-        if not stim_file.exists():
-            stim_file.touch()
-        self.files["stimuli"] = str(stim_file)
-
-        # Behavioral file
-        beh_file = self.directories["behavioral"] / f"sub-{subj_id}_task-{task_name}_behavioral.csv"
-        if not beh_file.exists():
-            beh_file.touch()
-        self.files["behavioral"] = str(beh_file)
+        # Stimuli directory
+        stim_dir = ses_dir / "stimuli"
+        stim_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["stimuli_data"] = stim_dir
 
     def make_display(self) -> Tuple:
         """
@@ -467,6 +476,49 @@ class PsychoPhysicsExperiment:
         else:
             raise ValueError("Subject loadation cancelled.")
 
+    def session_selection_gui(self, subj_info: pd.DataFrame):
+        """
+        GUI for choosing the session.
+
+        Args:
+            subj_info (pd.DataFrame): The subject info as a pandas DataFrame.
+
+        Returns:
+            int: The session number.
+
+        Raises:
+            ValueError: If the session selection is cancelled.
+        """
+        # Make the dialog
+        dlg = gui.Dlg(
+            title="Session Selection",
+            labelButtonOK="Alright",
+            labelButtonCancel="Go Away",
+            alwaysOnTop=True
+        )
+        dlg.addText("Experiment", self.name, color="blue")
+        dlg.addText("Date", data.getDateStr(), color="blue")
+        dlg.addFixedField("Version", self.version)
+
+        # Add the subject info
+        valid_info_fields = ["PID"] + list(self.exp_params["SubjectInfo"].keys())
+        for field in subj_info.columns:
+            if field in valid_info_fields:
+                dlg.addFixedField(field, subj_info[field].values[0])
+
+        # Find the sessions that are available
+        sessions = [int(ses["id"]) for ses in self.exp_params["Sessions"]]
+        burnt_sessions = subj_info.columns[subj_info.columns.str.contains("Session")].values.astype(int)
+        available_sessions = [session for session in sessions if session not in burnt_sessions]
+        dlg.addField("Session", choices=available_sessions)
+
+        # Show the dialog
+        dlg.show()
+        if dlg.OK:
+            return int(dlg.data[0])
+        else:
+            raise ValueError("Session selection cancelled.")
+
     def task_selection_gui(self, subj_info: pd.DataFrame):
         """
         GUI for choosing the task.
@@ -561,7 +613,7 @@ class PsychoPhysicsExperiment:
         out_df = pd.concat([df, sub_df], ignore_index=True)
         out_df.to_csv(self.files["participants"], sep="\t", index=False)
 
-    def get_system_status(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
+    def system_check(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
         """
         Check the status of the system, including:
             - Standard deviation of screen refresh rate
@@ -571,7 +623,7 @@ class PsychoPhysicsExperiment:
         """
         # Initial system check
         run_info = info.RunTimeInfo(
-            version=self.study_settings["Version"],
+            version=self.settings["Study"]["Version"],
             win=self.window,
             refreshTest='grating',
             userProcsDetailed=True,
@@ -580,7 +632,7 @@ class PsychoPhysicsExperiment:
 
         # Start testing
         self.logger.info("Running system checks.")
-        display_warnings = ""
+        warnings = ""
 
         # Test the refresh rate of the monitor
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
@@ -588,7 +640,7 @@ class PsychoPhysicsExperiment:
 
         if rf is None:
             self.logger.critical("No identical frame refresh times were found.")
-            display_warnings += "(✘) No identical frame refresh times. You should quit the experiment IMHO.\n\n"
+            warnings += "(✘) No identical frame refresh times. You should quit the experiment IMHO.\n\n"
         else:
             # check if the measured refresh rate is the same as the one intended
             rf = np.round(rf).astype(int)
@@ -596,44 +648,44 @@ class PsychoPhysicsExperiment:
                 self.logger.warning(
                     f"The actual refresh rate {rf} does not match the intended refresh rate {intended_rf}."
                 )
-                display_warnings += f"(✘) The actual refresh rate {rf} does not match {intended_rf}.\n\n"
+                warnings += f"(✘) The actual refresh rate {rf} does not match {intended_rf}.\n\n"
             else:
-                display_warnings += "(✓) Monitor refresh rate checks out.\n\n"
+                warnings += "(✓) Monitor refresh rate checks out.\n\n"
 
         # Look for flagged processes
         flagged = run_info['systemUserProcFlagged']
         if len(flagged):
             procs = "Flagged processes: "
-            display_warnings += "\t(✘) Flagged processes: "
+            warnings += "\t(✘) Flagged processes: "
             for pr in np.unique(flagged):
                 procs += f"{pr}, "
-                display_warnings += f"{pr}, "
+                warnings += f"{pr}, "
             self.logger.warning(procs)
-            display_warnings += "\n\n"
+            warnings += "\n\n"
         else:
-            display_warnings += "(✓) No flagged processes.\n\n"
+            warnings += "(✓) No flagged processes.\n\n"
 
         # See if we have enough RAM
         if run_info["systemMemFreeRAM"] < ram_thresh:
             self.logger.warning(f"Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.")
-            display_warnings += f"(✘) Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.\n\n"
+            warnings += f"(✘) Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.\n\n"
         else:
-            display_warnings += "(✓) RAM is OK.\n\n"
+            warnings += "(✓) RAM is OK.\n\n"
 
         # Raise the priority of the experiment for CPU
         # Check if it's Mac OS X (these methods don't run on that platform)
         if self.platform_settings["OS"] in ["darwin", "Mac OS X"]:
             self.logger.warning("Cannot raise the priority because you are on Mac OS X.")
-            display_warnings += "(✘) Cannot raise the priority because you are on Mac OS X.\n\n"
+            warnings += "(✘) Cannot raise the priority because you are on Mac OS X.\n\n"
         else:
             try:
                 Computer.setPriority("realtime", disable_gc=True)
-                display_warnings += "(✓) Realtime processing is set.\n\n"
+                warnings += "(✓) Realtime processing is set.\n\n"
             except Exception as e:
                 self.logger.warning(f"Error in elevating processing priority: {e}")
-                display_warnings += f"(✘) Error in elevating processing priority: {e}.\n\n"
+                warnings += f"(✘) Error in elevating processing priority: {e}.\n\n"
 
-        return display_warnings
+        return warnings
 
     def clear_screen(self):
         """ clear up the PsychoPy window"""
