@@ -949,6 +949,25 @@ class PsychoPhysicsDatabase:
             return existing_task.id
         return task.id
 
+    def add_task_parameter(self, task_id, key, value):
+        """
+        Add a new parameter to a task.
+
+        Args:
+            task_id (int): The ID of the task.
+            key (str): The parameter key.
+            value (str): The parameter value.
+        """
+        session = self.Session()
+        task_parameter = TaskParameter(task_id=task_id, key=key, value=value)
+        try:
+            session.add(task_parameter)
+            session.commit()
+        except IntegrityError:
+            existing_task_parameter = session.query(TaskParameter).filter_by(task_id=task_id, key=key).first()
+            return existing_task_parameter.id
+        return task_parameter.id
+
     def add_block(self, order, stage_id):
         """
         Add a new block to the database.
@@ -1081,19 +1100,6 @@ class PsychoPhysicsDatabase:
         session = self.Session()
         return session.query(Task).filter_by(experiment_id=experiment_id).all()
 
-    def get_stages(self, task_id):
-        """
-        Retrieve all stages for a given task.
-
-        Args:
-            task_id (int): The ID of the task.
-
-        Returns:
-            list: List of stages.
-        """
-        session = self.Session()
-        return session.query(Stage).filter_by(task_id=task_id).all()
-
     def get_blocks(self, stage_id):
         """
         Retrieve all blocks for a given stage.
@@ -1194,42 +1200,38 @@ class PsychoPhysicsDatabase:
         # Collect data
         data = []
         for task in tasks:
-            stages = session.query(Stage).filter_by(task_id=task.id).all()
-            for stage in stages:
-                blocks = session.query(Block).filter_by(stage_id=stage.id).all()
-                for block in blocks:
-                    trials = session.query(Trial).filter_by(block_id=block.id).all()
-                    for trial in trials:
-                        stimuli = session.query(Stimulus).filter_by(trial_id=trial.id).all()
-                        for stimulus in stimuli:
+            blocks = session.query(Block).filter_by(stage_id=task.id).all()
+            for block in blocks:
+                trials = session.query(Trial).filter_by(block_id=block.id).all()
+                for trial in trials:
+                    stimuli = session.query(Stimulus).filter_by(trial_id=trial.id).all()
+                    for stimulus in stimuli:
 
-                            # Information
-                            trial_data = dict(
-                                ExperimentName=exp.title,
-                                ExperimentVersion=exp.version,
-                                SubjectID=subject.id,
-                                SubjectInitials=subject.initials,
-                                TaskName=task.name,
-                                TaskDate=task.created_at,
-                                StageName=stage.name,
-                                StageNumber=stage.order,
-                                BlockNumber=block.order,
-                                TrialNumber=trial.order,
-                                StimulusName=stimulus.name
-                                )
+                        # Information
+                        trial_data = dict(
+                            ExperimentName=exp.title,
+                            ExperimentVersion=exp.version,
+                            SubjectID=subject.id,
+                            SubjectInitials=subject.initials,
+                            TaskName=task.name,
+                            TaskDate=task.date,
+                            BlockNumber=block.order,
+                            TrialNumber=trial.order,
+                            StimulusName=stimulus.name
+                            )
 
-                            # Stimulus
-                            stimulus_fields = self.get_table_fields(Stimulus)
-                            for field in stimulus_fields:
-                                if field not in ['id', 'trial_id', 'trial']:
-                                    trial_data[field] = getattr(stimulus, field)
+                        # Stimulus
+                        stimulus_fields = self.get_table_fields(Stimulus)
+                        for field in stimulus_fields:
+                            if field not in ['id', 'trial_id', 'trial']:
+                                trial_data[field] = getattr(stimulus, field)
 
-                            # Response
-                            behavioral_response = session.query(BehavioralResponse).filter_by(trial_id=trial.id).first()
-                            trial_data['Response'] = behavioral_response.choice
+                        # Response
+                        behavioral_response = session.query(BehavioralResponse).filter_by(trial_id=trial.id).first()
+                        trial_data['Response'] = behavioral_response.choice
 
-                            # Append to data
-                            data.append(trial_data)
+                        # Append to data
+                        data.append(trial_data)
 
         # Create DataFrame
         df = pd.DataFrame(data)
