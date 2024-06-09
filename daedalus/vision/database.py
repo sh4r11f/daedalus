@@ -202,6 +202,43 @@ class Subject(Base):
         return f'<Subject(id={self.id}, initials={self.initials}, name={self.name}, age={self.age})>'
 
 
+class SubjectSession(Base):
+    """
+    This class represents a SubjectSession (i.e. session) in the database.
+
+    Attributes:
+        id (int): The primary key.
+        session_number (int): The number of the session.
+        date (str): The date of the session.
+        time (str): The time of the session.
+        location (str): The location of the session.
+        notes (str): The notes of the session.
+    """
+    __tablename__ = 'sessions'
+
+    id = Column(Integer, primary_key=True)
+    session_num = Column(Integer, nullable=False)
+    date = Column(DateTime, default=datetime.now)
+    location = Column(String)
+    duration = Column(Integer)
+    notes = Column(String)
+
+    # Parents
+    subject_id = Column(Integer, ForeignKey('subjects.id'), nullable=False)
+    subject = relationship('Subject', back_populates='sessions')
+
+    # Children
+    tasks = relationship('Task', back_populates='session')
+
+    __table_args__ = (
+        CheckConstraint("session_number > 0", name="session_number_check"),
+        UniqueConstraint('session_number', 'subject_id', name='unique_session')
+    )
+
+    def __repr__(self):
+        return f'<Session(id={self.id}, session_number={self.session_number}, date={self.date}, time={self.time})>'
+
+
 class Task(Base):
     """
     This class represents a Task in the database.
@@ -217,16 +254,16 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
-    parameters = Column(String, nullable=False)
     description = Column(String)
-    created_at = Column(DateTime, default=datetime.now)
+    duration = Column(Integer)
 
     # Parents
     subject_id = Column(Integer, ForeignKey('subjects.id'), nullable=False)
     subject = relationship('Subject', back_populates='tasks')
 
     # Children
-    stages = relationship('Stage', back_populates='task')
+    parameters = relationship('TaskParameter', back_populates='task')
+    blocks = relationship('Block', back_populates='task')
 
     __table_args__ = (
         CheckConstraint("duration > 0", name="duration_check")
@@ -236,34 +273,32 @@ class Task(Base):
         return f'<Task(id={self.id}, name={self.name}, description={self.description}, duration={self.duration})>'
 
 
-class Stage(Base):
+class TaskParameter(Base):
     """
-    This class represents a Stage in the database.
+    This class represents a Task Parameter in the database.
 
     Attributes:
         id (int): The primary key.
-        name (str): The name of the stage.
-        order (int): The order of the stage.
-        description (str): The description of the stage.
+        name (str): The name of the parameter.
+        value (str): The value of the parameter.
     """
-    __tablename__ = 'stages'
+    __tablename__ = 'task_parameters'
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    order = Column(Integer, nullable=False)
-    description = Column(String)
+    value = Column(String, nullable=False)
 
-    # Relationships
+    # Parents
     task_id = Column(Integer, ForeignKey('tasks.id'), nullable=False)
-    task = relationship('Task', back_populates='stages')
-    blocks = relationship('Block', back_populates='stage')
+    task = relationship('Task', back_populates='parameters')
 
+    # Constraints
     __table_args__ = (
-        UniqueConstraint('order', "task_id", name='unique_stage')
+        UniqueConstraint('name', 'task_id', name='unique_parameter')
     )
 
     def __repr__(self):
-        return f'<Stage(id={self.id}, name={self.name}, description={self.description}, order={self.order})>'
+        return f'<TaskParameter(id={self.id}, name={self.name}, value={self.value})>'
 
 
 class Block(Base):
@@ -279,11 +314,14 @@ class Block(Base):
     id = Column(Integer, primary_key=True)
     order = Column(Integer, nullable=False)
 
-    # Relationships
-    stage_id = Column(Integer, ForeignKey('stages.id'), nullable=False)
-    stage = relationship('Stage', back_populates='blocks')
+    # Parents
+    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=False)
+    task = relationship('Task', back_populates='blocks')
+
+    # Children
     trials = relationship('Trial', back_populates='block')
 
+    # Constraints
     __table_args__ = (
         UniqueConstraint('order', 'stage_id', name='unique_block')
     )
@@ -305,9 +343,11 @@ class Trial(Base):
     id = Column(Integer, primary_key=True)
     order = Column(Integer, nullable=False)
 
-    # Relationships
+    # Parents
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=False)
     block = relationship('Block', back_populates='trials')
+
+    # Children
     stimuli = relationship('Stimulus', back_populates='trial')
     behavioral_responses = relationship('BehavioralResponse', back_populates='trial')
     eyetracking_events = relationship('EyeTrackingEvent', back_populates='trial')
@@ -333,18 +373,91 @@ class Stimulus(Base):
     __tablename__ = 'stimuli'
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, unique=True)
 
-    # Relationships
+    # Parents
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=False)
     trial = relationship('Trial', back_populates='stimuli')
 
-    
+    # Children
+    properties = relationship('StimulusProperty', back_populates='stimulus')
 
     def __repr__(self):
         return f'<Stimulus(id={self.id}, name={self.name})>'
 
 
+class StimulusProperty(Base):
+    """
+    This class represents a Stimulus Property in the database.
+
+    Attributes:
+        id (int): The primary key.
+        name (str): The name of the property.
+        key (str): The key of the property.
+        value (str): The value of the property.
+    """
+    __tablename__ = 'stimulus_properties'
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+
+    # Parents
+    stimulus_id = Column(Integer, ForeignKey('stimuli.id'), nullable=False)
+    stimulus = relationship('Stimulus', back_populates='properties')
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('key', "stimulus_id", name='unique_property')
+    )
+
+    def __repr__(self):
+        return f'<StimulusProperty(id={self.id}, name={self.name}, key={self.key}, value={self.value})>'
+
+class BehavioralResponse(Base):
+    """
+    This class represents a Behavioral Response in the database.
+
+    Attributes:
+        id (int): The primary key.
+        response (str): The response of the subject.
+    """
+    __tablename__ = 'behavioral_responses'
+
+    id = Column(Integer, primary_key=True)
+    choice = Column(String)
+
+    # Relationships
+    trial_id = Column(Integer, ForeignKey('trials.id'))
+    trial = relationship('Trial', back_populates='behavioral_responses')
+
+    def __repr__(self):
+        return f'<BehavioralResponse(id={self.id}, response={self.response})>'
+
+
+class EphysSample(Base):
+    """
+    This class represents an Electrophysiological Sample in the database.
+
+    Attributes:
+        id (int): The primary key.
+        timestamp (float): The timestamp of the sample.
+        channel (str): The channel of the sample.
+        value (float): The value of the sample.
+    """
+    __tablename__ = 'ephys_samples'
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(Float)
+    channel = Column(String)
+    value = Column(Float)
+
+    # Relationships
+    trial_id = Column(Integer, ForeignKey('trials.id'))
+    trial = relationship('Trial', back_populates='ephys_samples')
+
+    def __repr__(self):
+        return f'<EphysSample(id={self.id}, timestamp={self.timestamp}, channel={self.channel}, value={self.value})>'
 class EyeTrackingEvent(Base):
     """
     This class represents an Eye-Tracking Event in the database.
@@ -451,48 +564,3 @@ class EyeTrackingSample(Base):
     def __repr__(self):
         return f'<EyeTrackingSample(id={self.id}, timestamp={self.timestamp})>'
 
-
-class BehavioralResponse(Base):
-    """
-    This class represents a Behavioral Response in the database.
-
-    Attributes:
-        id (int): The primary key.
-        response (str): The response of the subject.
-    """
-    __tablename__ = 'behavioral_responses'
-
-    id = Column(Integer, primary_key=True)
-    choice = Column(String)
-
-    # Relationships
-    trial_id = Column(Integer, ForeignKey('trials.id'))
-    trial = relationship('Trial', back_populates='behavioral_responses')
-
-    def __repr__(self):
-        return f'<BehavioralResponse(id={self.id}, response={self.response})>'
-
-
-class EphysSample(Base):
-    """
-    This class represents an Electrophysiological Sample in the database.
-
-    Attributes:
-        id (int): The primary key.
-        timestamp (float): The timestamp of the sample.
-        channel (str): The channel of the sample.
-        value (float): The value of the sample.
-    """
-    __tablename__ = 'ephys_samples'
-
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(Float)
-    channel = Column(String)
-    value = Column(Float)
-
-    # Relationships
-    trial_id = Column(Integer, ForeignKey('trials.id'))
-    trial = relationship('Trial', back_populates='ephys_samples')
-
-    def __repr__(self):
-        return f'<EphysSample(id={self.id}, timestamp={self.timestamp}, channel={self.channel}, value={self.value})>'

@@ -35,8 +35,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from database import (
-    Base, Author, ExperimentAuthor, Experiment, Directory, File,
-    Subject, Task, Stage, Block, Trial, Stimulus, BehavioralResponse
+    Base, Experiment, Author, ExperimentAuthor, Directory, File,
+    Subject, SubjectSession, Task, TaskParameter,
+    Block, Trial, Stimulus, StimulusProperty,
+    BehavioralResponse
 )
 
 
@@ -118,14 +120,10 @@ class PsychoPhysicsExperiment:
         }
         return clocks
 
-    def init_directories(self) -> Dict:
+    def init_dirs_dict(self) -> Dict:
         """
-        Sets up the directories and paths that are important in the experiment. The structure roughly follows the
-        BIDS convention.
+        Make a dictionary of relevant directories
 
-        Example:  data/FIPS/sub-01/staircase/
-                        data/FIPS2/sub-02/perceptual/
-                        ...
         Returns
             dict: data, sub, and task keys and the corresponding Path objects as values.
         """
@@ -154,13 +152,14 @@ class PsychoPhysicsExperiment:
 
         return dirs
 
-    def init_files(self) -> Dict:
+    def init_files_dict(self) -> Dict:
         """
-        Sets up the files that are important in the experiment. The structure roughly follows the BIDS convention.
+        Make a dictionary of important files. The structure of data files follows the BIDS convention.
+            Example:
+                data/sub-01/ses-01/stimuli/sub-01_ses-01_task-threshold_block-01_stimuli.csv
+                data/sub-01/ses-01/behavioral/sub-01_ses-01_task-threshold_block-01_choices.csv
+                data/sub-01/ses-01/eyetracking/sub-01_ses-01_task-contrast_block-01_saccades.csv
 
-        Example:  data/FIPS/sub-01/staircase/
-                        data/FIPS2/sub-02/perceptual/
-                        ...
         Returns
             dict: participants, stimuli, and other files as keys and the corresponding Path objects as values.
         """
@@ -185,10 +184,10 @@ class PsychoPhysicsExperiment:
         files["database"] = str(db_file)
 
         # Participants file
-        # part_file = self.directories["data"] / "participants.tsv"
-        # if not part_file.exists():
-        #     self.init_participants_file()
-        # files["participants"] = str(part_file)
+        part_file = self.directories["data"] / "participants.tsv"
+        if not part_file.exists():
+            self.init_participants_file()
+        files["participants"] = str(part_file)
 
         # Modules
         modules = self.self.platfrom_settings["Modules"]
@@ -202,6 +201,9 @@ class PsychoPhysicsExperiment:
     def init_logging(self):
         """
         Generates the log file for experiment-level logging.
+
+        Returns:
+            logging.Logger: The logger object.
         """
         # Make the logger object
         logger = log_handler.get_logger(self.name)
@@ -234,6 +236,60 @@ class PsychoPhysicsExperiment:
         logger.info("-" * 80)
 
         return logger
+
+    def init_subject_dirs(self, subj_id: str, task_name: str):
+        """
+        Add directories for the subject.
+
+        Args:
+            subj_id (str): Subject ID
+            task_name (str): Task name
+        """
+        # Subject directory
+        subj_dir = self.directories["data"] / f"sub-{subj_id}"
+        subj_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["subject"] = subj_dir
+
+        # Log directory
+        log_dir = subj_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["log"] = log_dir
+
+        # Session directory
+        for ses_num in range(1, self.exp_params["NumSessions"] + 1):
+            ses_dir = subj_dir / f"ses-{ses_num}"
+            ses_dir.mkdir(parents=True, exist_ok=True)
+            self.dirs["session"] = ses_dir
+
+            # Behavioral directory
+            beh_dir = ses_dir / "behavioral"
+            beh_dir.mkdir(parents=True, exist_ok=True)
+            self.dirs["behavioral"] = beh_dir
+
+            # Stimuli directory
+            stim_dir = ses_dir / "stimuli"
+            stim_dir.mkdir(parents=True, exist_ok=True)
+            self.dirs["stimuli"] = stim_dir
+
+    def init_subject_files(self, subj_id: str, task_name: str):
+        """
+        Add files for the subject.
+
+        Args:
+            subj_id (str): Subject ID
+            task_name (str): Task name
+        """
+        # Stimuli file
+        stim_file = self.directories["stimuli"] / f"sub-{subj_id}_task-{task_name}_stimuli.csv"
+        if not stim_file.exists():
+            stim_file.touch()
+        self.files["stimuli"] = str(stim_file)
+
+        # Behavioral file
+        beh_file = self.directories["behavioral"] / f"sub-{subj_id}_task-{task_name}_behavioral.csv"
+        if not beh_file.exists():
+            beh_file.touch()
+        self.files["behavioral"] = str(beh_file)
 
     def make_display(self) -> Tuple:
         """
@@ -851,21 +907,40 @@ class PsychoPhysicsDatabase:
             return existing_subject.id
         return subject.id
 
-    def add_task(self, name, parameters, description, experiment_id):
+    def add_subject_session(self, subject_id, session_num):
+        """
+        Add a new subject session to the database.
+
+        Args:
+            subject_id (int): The ID of the subject.
+            session_num (int): The number of the session.
+
+        Returns:
+            int: The ID of the added subject session.
+        """
+        session = self.Session()
+        subject_session = SubjectSession(subject_id=subject_id, session_num=session_num)
+        try:
+            session.add(subject_session)
+            session.commit()
+        except IntegrityError:
+            existing_subject_session = session.query(SubjectSession).filter_by(
+                subject_id=subject_id, session=session_num).first()
+            return existing_subject_session.id
+        return subject_session.id
+
+    def add_task(self, name, **kwargs):
         """
         Add a new task to the database.
 
         Args:
             name (str): The name of the task.
-            parameters (str): The parameters of the task.
-            description (str): The description of the task.
-            experiment_id (int): The ID of the experiment.
 
         Returns:
             int: The ID of the added task.
         """
         session = self.Session()
-        task = Task(name=name, parameters=parameters, description=description, experiment_id=experiment_id)
+        task = Task(name=name, **kwargs)
         try:
             session.add(task)
             session.commit()
@@ -873,29 +948,6 @@ class PsychoPhysicsDatabase:
             existing_task = session.query(Task).filter_by(name=name).first()
             return existing_task.id
         return task.id
-
-    def add_stage(self, name, order, description, task_id):
-        """
-        Add a new stage to the database.
-
-        Args:
-            name (str): The name of the stage.
-            order (int): The order of the stage.
-            description (str): The description of the stage.
-            task_id (int): The ID of the task.
-
-        Returns:
-            int: The ID of the added stage.
-        """
-        session = self.Session()
-        stage = Stage(name=name, order=order, description=description, task_id=task_id)
-        try:
-            session.add(stage)
-            session.commit()
-        except IntegrityError:
-            existing_stage = session.query(Stage).filter_by(order=order, task_id="task_id").first()
-            return existing_stage.id
-        return stage.id
 
     def add_block(self, order, stage_id):
         """
@@ -952,9 +1004,32 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         stimulus = Stimulus(name=name, trial_id=trial_id)
-        session.add(stimulus)
-        session.commit()
+        try:
+            session.add(stimulus)
+            session.commit()
+        except IntegrityError:
+            existing_stimulus = session.query(Stimulus).filter_by(name=name, trial_id=trial_id).first()
+            return existing_stimulus.id
         return stimulus.id
+
+    def add_stimulus_property(self, stim_id, key, value):
+        """
+        Add a new property to a stimulus.
+
+        Args:
+            stim_id (int): The ID of the stimulus.
+            key (str): The property key.
+            value (str): The property value.
+        """
+        session = self.Session()
+        stimulus_property = StimulusProperty(stimulus_id=stim_id, key=key, value=value)
+        try:
+            session.add(stimulus_property)
+            session.commit()
+        except IntegrityError:
+            existing_stimulus_property = session.query(StimulusProperty).filter_by(stimulus_id=stim_id, key=key).first()
+            return existing_stimulus_property.id
+        return stimulus_property.id
 
     def add_behavioral_response(self, response, trial_id):
         """
@@ -1057,6 +1132,19 @@ class PsychoPhysicsDatabase:
         """
         session = self.Session()
         return session.query(Stimulus).filter_by(trial_id=trial_id).all()
+
+    def get_stimulus_properties(self, stim_id):
+        """
+        Retrieve all properties for a given stimulus.
+
+        Args:
+            stim_id (int): The ID of the stimulus.
+
+        Returns:
+            list: List of stimulus properties.
+        """
+        session = self.Session()
+        return session.query(StimulusProperty).filter_by(stimulus_id=stim_id).all()
 
     def get_behavioral_responses(self, trial_id):
         """
