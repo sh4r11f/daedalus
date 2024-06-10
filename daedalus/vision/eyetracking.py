@@ -177,7 +177,7 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         while not fixated:
             if self.clocks["trial"].getTime() - start_time > timeout:
-                self.logger.warning("Fixation timeout.")
+                self.logger.critical("Fixation timeout.")
                 break
 
             fixation.draw()
@@ -188,7 +188,7 @@ class Eyetracking(PsychoPhysicsExperiment):
                 gaze_x = eye_events["fixation_start"][-1]["gaze_x"]
                 gaze_y = eye_events["fixation_start"][-1]["gaze_y"]
                 if method == "circle":
-                    valid = self.check_fixation_in_circle(gaze_x, gaze_y, fixation.pos[0], fixation.pos[1], radi)
+                    valid = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
                 else:
                     raise NotImplementedError("Only circle method is implemented.")
                 if valid:
@@ -200,15 +200,46 @@ class Eyetracking(PsychoPhysicsExperiment):
     def recalibrate(self):
         """
         """
-        # need recalibration if fixation timed out
+        self.tracker.
         self.show_calibration_msg()
         err = self.tracker.calibrate()
         if err is not None:
             self.logger.critical(f"Recalibration failed: {err}")
             return err
         self.logger.info("Recalibration successful.")
-                
 
+    def monitor_fixation(self, fixation, timeout, radi, method="circle"):
+        """
+        Monitor fixation.
+
+        Args:
+            fixation (object): The fixation stimulus.
+            timeout (float): The time to wait for fixation.
+            radi (float): The radius of the circle.
+
+        Returns:
+            bool: Whether the fixation is established or not.
+        """
+        events_of_interest = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
+        events = self.tracker.detect_event_online(events_of_interest)
+
+        if events["fixation_end"]:
+            self.logger.critical("Fixation lost.")
+            return "Fixation lost."
+
+        if events["fixation_update"]:
+            for event in events["fixation_update"]:
+                gaze_x = event["gaze_x"]
+                gaze_y = event["gaze_y"]
+                if method == "circle":
+                    valid = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
+                else:
+                    raise NotImplementedError("Only circle method is implemented.")
+                if valid:
+                    self.logger.info("Fixation updated.")
+                else:
+                    self.logger.critical("Fixation lost.")
+                    return "Fixation lost."
 
 class EyeTrackingDatabase(PsychoPhysicsDatabase):
     """

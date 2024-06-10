@@ -225,10 +225,10 @@ class MyeLink:
             # Perform drift correction
             err = self.eyelink.doDriftCorrect(fix_x, fix_y, draw=1, allow_setup=1)
             # break if successful
-            if err is not pylink.ESC_KEY:
+            if err != pylink.ESC_KEY:
                 break
             else:
-                error = err
+                self.calibrate()
 
         return error
 
@@ -346,15 +346,14 @@ class MyeLink:
             if not buffer_item:
                 break
 
-            # Get the data for the tracked eye
-            if buffer_item.getType() == pylink.SAMPLE_TYPE:
+            # Get the event data for the tracked eye
+            if buffer_item.getType() != pylink.SAMPLE_TYPE:
                 data = self.eyelink.getFloatData()
                 if data.getEye() == self.tracked_eye:
                     for etype, ecode in events_of_interest.items():
                         if buffer_item == ecode:
-                            info[etype].append(self._get_detect_func(etype)(data))
-                        else:
-                            pass
+                            efunc = self._get_detect_func(etype)
+                            info[etype].append(efunc(data))
 
         return info
 
