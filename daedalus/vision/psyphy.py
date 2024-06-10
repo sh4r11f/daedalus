@@ -34,7 +34,7 @@ from daedalus import log_handler, utils
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-from database import (
+from daedalus.data.database import (
     Base, Experiment, Author, ExperimentAuthor, Directory, File,
     Subject, SubjectSession, Task, TaskParameter,
     Block, Trial, Stimulus, StimulusProperty,

@@ -183,11 +183,9 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        error = None
-
         # Check if the eye is being tracked
-        eye_error = self.check_eye(log=True)
-        if eye_error is None:
+        error = self.check_eye(log=True)
+        if error is None:
             try:
                 # Start the calibration
                 self.eyelink.doTrackerSetup()
@@ -196,8 +194,6 @@ class MyeLink:
             except RuntimeError as err:
                 error = err
                 self.eyelink.exitCalibration()
-        else:
-            error = eye_error
 
         return error
 

@@ -19,9 +19,10 @@
 # ==================================================================================================== #
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
+import pylink
 from .EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
 from .psyphy import PsychoPhysicsExperiment, PsychoPhysicsDatabase
-from .database import EyeTrackingEvent, EyeTrackingSample
+from ..data.database import EyeTrackingEvent, EyeTrackingSample
 
 
 class Eyetracking(PsychoPhysicsExperiment):
@@ -108,20 +109,105 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         return genv
 
-    def check_fixation_in_region(self, region, fixation_coords):
+    def show_calibration_msg(self):
         """
-        Checks if the gaze is fixed within a region for a certain duration.
+        Shows a message before starting the calibration.
+        """
+        msg = "In the next screen, press ENTER then C to recalibrate.\n\n"
+        msg += "Once the calibration is done, press ENTER then O to resume the experiment.\n\n"
+        msg += "Press any key to continue..."
+
+        self.show_msg(msg)
+
+    def check_fixation_in_square(self, center, radius, fix_coords):
+        """
+        Check if the fixation is within the square.
 
         Args:
-            region (list): The region to check for fixation.
-            duration (float): The duration of fixation required.
-            timeout (int): The timeout for the fixation check.
+            center (tuple): The center of the square.
+            radius (int): The radius of the square.
+            fix_coords (tuple): The fixation coordinates.
 
         Returns:
-            bool: Whether the fixation was successful or not.
+            bool: Whether the fixation is within the square or not.
         """
-        # Check fixation
-        pass
+        valid_x = center[0] - radius < fix_coords[0] < center[0] + radius
+        valid_y = center[1] - radius < fix_coords[1] < center[1] + radius
+
+        if valid_x and valid_y:
+            return True
+        else:
+            return False
+
+    def check_fixation_in_circle(self, fx, fy, gx, gy, radius):
+        """
+        Check if the fixation is within the circle.
+
+        Args:
+            fx (float): The x-coordinate of the fixation.
+            fy (float): The y-coordinate of the fixation.
+            gx (float): The x-coordinate of the gaze.
+            gy (float): The y-coordinate of the gaze.
+            radius (float): The radius of the circle.
+
+        Returns:
+            bool: Whether the fixation is within the circle or not.
+        """
+        offset = utils.get_hypot(fx, fy, gx, gy)
+        if offset < radius:
+            return True
+        else:
+            return False
+
+    def establish_fixation(self, fixation, timeout, radi, method="circle"):
+        """
+        Establish fixation.
+
+        Args:
+            fixation (object): The fixation stimulus.
+            timeout (float): The time to wait for fixation.
+            radi (float): The radius of the circle.
+
+        Returns:
+            bool: Whether the fixation is established or not.
+        """
+        events_of_interest = {"fixation_start": pylink.STARTFIX}
+        start_time = self.clocks["trial"].getTime()
+        fixated = False
+
+        while not fixated:
+            if self.clocks["trial"].getTime() - start_time > timeout:
+                self.logger.warning("Fixation timeout.")
+                break
+
+            fixation.draw()
+            self.window.flip()
+
+            eye_events = self.tracker.detect_event_online(events_of_interest)
+            if eye_events["fixation_start"]:
+                gaze_x = eye_events["fixation_start"][-1]["gaze_x"]
+                gaze_y = eye_events["fixation_start"][-1]["gaze_y"]
+                if method == "circle":
+                    valid = self.check_fixation_in_circle(gaze_x, gaze_y, fixation.pos[0], fixation.pos[1], radi)
+                else:
+                    raise NotImplementedError("Only circle method is implemented.")
+                if valid:
+                    self.logger.info("Fixation established.")
+                    fixated = True
+
+        return fixated
+
+    def recalibrate(self):
+        """
+        """
+        # need recalibration if fixation timed out
+        self.show_calibration_msg()
+        err = self.tracker.calibrate()
+        if err is not None:
+            self.logger.critical(f"Recalibration failed: {err}")
+            return err
+        self.logger.info("Recalibration successful.")
+                
 
 
 class EyeTrackingDatabase(PsychoPhysicsDatabase):
