@@ -65,4 +65,3 @@ def set_handlers_level(logger, handler_type, new_level):
 def remove_handlers(logger):
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
-

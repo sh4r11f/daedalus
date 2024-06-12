@@ -91,6 +91,11 @@ class PsychoPhysicsExperiment:
         self.frames_data_file = None
         self.behav_data_file = None
 
+        # Data
+        self.stim_data = None
+        self.frames_data = None
+        self.behav_data = None
+
         # Subject and session info
         self.subj_id = None
         self.ses_id = None
@@ -121,10 +126,7 @@ class PsychoPhysicsExperiment:
         # Set the subject and session info
         self.subj_id = self._fix_id(subj_df["PID"].values[0])
         self.ses_id = self._fix_id(self.session_selection_gui())
-        self.tasks = self._get_session_tasks()
         subj_df["Experimenter"] = experimenter
-        for task in self.tasks:
-            subj_df[f"{task}Task"] = self.today
 
         # Setup the directories and files
         self.init_dirs()
@@ -152,7 +154,7 @@ class PsychoPhysicsExperiment:
             task_name (str): Task name.
             block_id (int): Block ID.
         """
-        self.setup_block_files(task_name, block_id)
+        self.init_block_data(task_name, block_id)
         self.block_clock = core.Clock()
 
         # Show block info as text
@@ -165,7 +167,7 @@ class PsychoPhysicsExperiment:
         elif resp == "space":
             self.logger.info(f"Starting block {block_id}.")
 
-    def prepare_trial(self, trial_num):
+    def prepare_trial(self, trial_id):
         """
         Prepare the trial for the block.
 
@@ -335,9 +337,9 @@ class PsychoPhysicsExperiment:
         Initialize an experiment data file.
         """
         columns = [
-            "TrialNum", "TrialDurationMS",
-            "StimName", "StimOnset", "StimDurationMS", "StimDurationFrames",
-            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+            "TrialIndex", "TrialDurationMS", "TrialDurationFrames",
+            # "StimName", "StimOnset", "StimDurationMS", "StimDurationFrames",
+            "BlockID", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
@@ -347,9 +349,9 @@ class PsychoPhysicsExperiment:
         Initialize a behavioral data file.
         """
         columns = [
-            "TrialNum", "TrialDurationMS",
+            "TrialIndex", "TrialDurationMS", "TrialDurationFrames",
             "ResponseKey", "Choice", "RT", "Correct",
-            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+            "BlockNum", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
@@ -359,14 +361,14 @@ class PsychoPhysicsExperiment:
         Initialize a frame intervals file.
         """
         columns = [
-            "TrialNum", "TrialDurationMS",
+            "TrialIndex",
             "FrameNum", "FrameDurationMS",
-            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+            "BlockID", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
 
-    def setup_block_files(self, task_name, block_id):
+    def init_block_data(self, task_name, block_id):
         """
         Add directories and files for a block in a task.
 
@@ -378,29 +380,28 @@ class PsychoPhysicsExperiment:
             block_id (int or str): Block ID
         """
         stim_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_stimuli.csv"
-        if not stim_file.exists():
-            self._init_stim_file(stim_file)
-        else:
-            self.logger.critical(f"Stimuli file already exists: {str(stim_file)}")
-            self.goodbye(f"Stimuli file already exists: {str(stim_file)}")
+        if stim_file.exists():
+            self.logger.critical(f"File {stim_file} already exists. Making a backup and removing the file.")
+            stim_file.rename(stim_file.with_suffix(".bak"))
+        self._init_stim_data_file(stim_file)
+        self.stim_data_file = stim_file
+        self.stim_data = pd.read_csv(stim_file, sep=",", index_col=False)
 
         frames_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_FrameIntervals.csv"
-        if not frames_file.exists():
-            self._init_frame_intervals_file(frames_file)
-        else:
-            self.logger.critical(f"Frame intervals file already exists: {str(frames_file)}")
-            self.goodbye(f"Frame intervals file already exists: {str(frames_file)}")
+        if frames_file.exists():
+            self.logger.critical(f"File {frames_file} already exists. Making a backup and removing the file.")
+            frames_file.rename(frames_file.with_suffix(".bak"))
+        self._init_frame_intervals_file(frames_file)
+        self.frames_data_file = frames_file
+        self.frames_data = pd.read_csv(frames_file, sep=",", index_col=False)
 
         behav_file = self.ses_data_dir / "behav" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_behavioral.csv"
-        if not behav_file.exists():
-            self._init_behav_data_file(behav_file)
-        else:
-            self.logger.critical(f"Behavioral file already exists: {str(behav_file)}")
-            self.goodbye(f"Behavioral file already exists: {str(behav_file)}")
-
-        self.stim_data_file = stim_file
-        self.frames_data_file = frames_file
+        if behav_file.exists():
+            self.logger.critical(f"File {behav_file} already exists. Making a backup and removing the file.")
+            behav_file.rename(behav_file.with_suffix(".bak"))
+        self._init_behav_data_file(behav_file)
         self.behav_data_file = behav_file
+        self.behav_data = pd.read_csv(behav_file, sep=",", index_col=False)
 
     def init_display(self) -> Tuple:
         """
@@ -827,6 +828,8 @@ class PsychoPhysicsExperiment:
         Closes and ends the experiment.
         """
         self.logger.info("Bye bye experiment.")
+        # Save the log file
+        self.logger.handlers[0].close()
         self.window.close()
         if raise_error is not None:
             raise SystemExit(f"Experiment ended with error: {raise_error}.")
@@ -869,6 +872,10 @@ class PsychoPhysicsExperiment:
     def ms2fr(self, duration: float):
         """Converts durations from ms to display frames"""
         return np.ceil(self.monitor_params["refresh_rate"] * duration / 1000).astype(int)
+
+    def fr2ms(self, frames: int):
+        """Converts durations from display frames to ms"""
+        return np.ceil(frames * 1000 / self.monitor_params["refresh_rate"]).astype(int)
 
 
 class PsychoPhysicsDatabase:

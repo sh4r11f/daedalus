@@ -56,6 +56,16 @@ class Eyetracking(PsychoPhysicsExperiment):
         self.tracker_params = utils.load_config(self.files["eyetrackers_params"])[self.tracker_model]
         self.tracker = None
 
+        # Files
+        self.events_data_file = None
+        self.samples_data_file = None
+        self.edf_display_file = None
+        self.edf_host_file = None
+
+        # Data
+        self.events_data = None
+        self.samples_data = None
+
     def init_experiment(self):
         """
         """
@@ -82,20 +92,30 @@ class Eyetracking(PsychoPhysicsExperiment):
     def prepare_block(self, task_name, block_id, n_blocks, calib=False):
         """
         """
-        super().prepare_block(task_name, block_id, n_blocks)
+        self.init_block_data(task_name, block_id)
+        self.block_clock = core.Clock()
 
-        # Put tracker in idle mode
-        self.tracker.go_offline()
-        if calib:
+        # Show block info as text
+        txt = f"You are about to begin block {block_id}/{n_blocks}.\n\n"
+        txt += "Press Space to start or Enter to recalibrate the eye tracker."
+        resp = self.show_msg(txt)
+        if resp in ["escape", "ctrl+c"]:
+            self.logger.critical("User quit the experiment.")
+            self.goodbye("User quit.")
+        elif resp == "space":
+            self.logger.info(f"Starting block {block_id}.")
+        elif resp == "enter":
+            self.logger.info(f"Recalibrating the eye tracker.")
             self.run_calibration()
 
-    def prepare_trial(self, trial_id, fixation=None):
+    def prepare_trial(self, trial_id, fix_pos=None):
         """
         """
         super().prepare_trial(trial_id)
 
         # Drift correction
-        err = self.tracker.drift_correct(fixation)
+        fix_pos = self.cart_to_mat(*fix_pos)
+        err = self.tracker.drift_correct(fix_pos)
         if err is not None:
             if err == "RECALIBRATE":
                 self.logger.info("Drift correction needs recalibration.")
@@ -112,6 +132,26 @@ class Eyetracking(PsychoPhysicsExperiment):
             return err
         else:
             self.logger.info("Recording started.")
+
+    def trial_cleanup(self):
+        """
+        """
+        # Stop recording
+        self.tracker.go_offline()
+        self.tracker.flush()
+
+        # Clear the screen
+        self.clear_screen()
+
+    def block_cleanup(self):
+        """
+        """
+        # Stop recording
+        self.tracker.go_offline()
+        self.tracker.flush()
+
+        # Clear the screen
+        self.clear_screen()
 
     def init_tracker(self):
         """
@@ -244,6 +284,32 @@ class Eyetracking(PsychoPhysicsExperiment):
         else:
             return False
 
+    def mat_to_cart(self, x, y):
+        """
+        Center the Eyelink coordinates.
+
+        Args:
+            x (float): The x-coordinate.
+            y (float): The y-coordinate.
+
+        Returns:
+            tuple: The centered coordinates.
+        """
+        return x - self.window.size[0] / 2, self.window.size[1] / 2 - y
+
+    def cart_to_mat(self, x, y):
+        """
+        Convert center coordinates to matrix coordinates.
+
+        Args:
+            x (float): The x-coordinate.
+            y (float): The y-coordinate.
+
+        Returns:
+            tuple: The matrix coordinates.
+        """
+        return self.window.size[0] / 2 + x, self.window.size[1] / 2 - y
+
     def establish_fixation(self, fixation, timeout, radi, method="circle"):
         """
         Establish fixation.
@@ -257,11 +323,12 @@ class Eyetracking(PsychoPhysicsExperiment):
             bool: Whether the fixation is established or not.
         """
         events_of_interest = {"fixation_start": pylink.STARTFIX}
-        start_time = self.clocks["trial"].getTime()
+        start_time = self.trial_clock.getTime()
+        fx, fy = fixation.pos
         fixated = False
 
         while not fixated:
-            if self.clocks["trial"].getTime() - start_time > timeout:
+            if self.trial_clock.getTime() - start_time > timeout:
                 self.logger.critical("Fixation timeout.")
                 self.tracker.eyelink.sendMessage("Fixation_Timeout")
                 break
@@ -273,8 +340,9 @@ class Eyetracking(PsychoPhysicsExperiment):
             if eye_events["fixation_start"]:
                 gaze_x = eye_events["fixation_start"][-1]["gaze_start_x"]
                 gaze_y = eye_events["fixation_start"][-1]["gaze_start_y"]
+                gx, gy = self.mat_to_cart(gaze_x, gaze_y)
                 if method == "circle":
-                    valid = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
+                    valid = self.check_fixation_in_circle(fx, fy, gx, gy, radi)
                 else:
                     raise NotImplementedError("Only circle method is implemented.")
                 if valid:
@@ -302,7 +370,7 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         return error
 
-    def monitor_fixation(self, fixation, radi, method="circle"):
+    def monitor_fixation(self, fix_pos, radi, method="circle"):
         """
         Monitor fixation.
 
@@ -314,6 +382,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is established or not.
         """
+        fx, fy = fix_pos
         events_of_interest = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
         events = self.tracker.detect_event_online(events_of_interest)
 
@@ -327,8 +396,9 @@ class Eyetracking(PsychoPhysicsExperiment):
             for event in events["fixation_update"]:
                 gaze_x = event["gaze_x"]
                 gaze_y = event["gaze_y"]
+                gx, gy = self.mat_to_cart(gaze_x, gaze_y)
                 if method == "circle":
-                    check = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
+                    check = self.check_fixation_in_circle(fx, fy, gx, gy, radi)
                 else:
                     raise NotImplementedError("Only circle method is implemented.")
                 valid_updates.append(check)
@@ -344,17 +414,17 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         return fixated
 
-    def setup_session_dirs(self, subj_id, ses_id):
+    def init_session_dirs(self, subj_id, ses_id):
         """
         """
         # Create directories for the session
-        super().setup_session_dirs(subj_id, ses_id)
+        super().init_session_dirs(subj_id, ses_id)
 
         # Add eyetracking specific directories
         eye_data_dir = self.ses_data_dir / "eye"
         eye_data_dir.mkdir(parents=True, exist_ok=True)
 
-    def _init_eye_events_file(self, file_path):
+    def _init_events_file(self, file_path):
         """
         """
         columns = [
@@ -371,7 +441,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_path, index=False)
 
-    def _init_eye_samples_file(self, file_path):
+    def _init_samples_file(self, file_path):
         """
         """
         columns = [
@@ -385,42 +455,38 @@ class Eyetracking(PsychoPhysicsExperiment):
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_path, index=False)
 
-    def setup_block_files(self, task_name, block_id):
+    def init_block_data(self, task_name, block_id):
         """
         """
-        super().setup_block_files(task_name, block_id)
+        super().init_block_data(task_name, block_id)
 
         # Add eyetracking specific files
-        eye_events_file = self.ses_data_dir / "eye" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_EyeEvents.csv"
-        if not eye_events_file.exists():
-            self._init_eye_events_file(eye_events_file)
-        else:
-            self.logger.critical(f"File {eye_events_file} already exists.")
-            self.goodbye(f"File {eye_events_file} already exists.")
+        events_file = self.ses_data_dir / "eye" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_EyeEvents.csv"
+        if events_file.exists():
+            self.logger.critical(f"File {events_file} already exists. Making a backup and removing the file.")
+            backup_file = events_file.with_suffix(".bak")
+            events_file.rename(backup_file)
+        self._init_events_file(events_file)
+        self.events_data_file = events_file
+        self.events_data = pd.read_csv(events_file)
 
-        eye_samples_file = self.ses_data_dir / "eye" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_EyeSamples.csv"
-        if not eye_samples_file.exists():
-            self._init_eye_samples_file(eye_samples_file)
-        else:
-            self.logger.critical(f"File {eye_samples_file} already exists.")
-            self.goodbye(f"File {eye_samples_file} already exists.")
+        samples_file = self.ses_data_dir / "eye" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_EyeSamples.csv"
+        if samples_file.exists():
+            self.logger.critical(f"File {samples_file} already exists. Making a backup and removing the file.")
+            backup_file = samples_file.with_suffix(".bak")
+            samples_file.rename(backup_file)
+        self._init_samples_file(samples_file)
+        self.samples_data_file = samples_file
+        self.samples_data = pd.read_csv(samples_file)
 
-    def end_block(self):
-        """
-        """
-        # Stop recording
-        self.tracker.stop_recording()
-        self.tracker.resetData()
+        edf_display_file = self.ses_data_dir / "eye" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}.edf"
+        if edf_display_file.exists():
+            self.logger.critical(f"File {edf_display_file} already exists. Making a backup and removing the file.")
+            backup_file = edf_display_file.with_suffix(".bak")
+            edf_display_file.rename(backup_file)
+        self.edf_display_file = edf_display_file
 
-        # Clear the screen
-        self.clear_screen()
-
-        # Send a message to clear the Data Viewer screen
-        bgcolor_RGB = (116, 116, 116)
-        self.tracker.send_message('!V CLEAR %d %d %d' % bgcolor_RGB)
-
-        # Send a message to mark the end of the block
-        self.tracker.send_message('BLOCK_END')
+        self.edf_host_file = f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_host.edf"
 
 
 class EyeTrackingDatabase(PsychoPhysicsDatabase):

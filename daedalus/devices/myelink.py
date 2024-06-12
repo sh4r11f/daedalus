@@ -218,7 +218,7 @@ class MyeLink:
         self.eyelink.sendMessage("Flush_OK")
         self.delay()
 
-    def go_offline(self, wait=300):
+    def go_offline(self, wait=500):
 
         if self.eyelink.isRecording():
             self.delay()
@@ -279,7 +279,7 @@ class MyeLink:
 
         return error
 
-    def drift_correct(self, fix=None):
+    def drift_correct(self, fix_pos=None):
         """
         Run drift correction
 
@@ -289,9 +289,11 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        if fix is None:
+        if fix_pos is None:
             monitor = pylink.getDisplayInformation()
-            fix = (monitor.width / 2, monitor.heigth / 2)
+            fx, fy = monitor.width / 2, monitor.height / 2
+        else:
+            fx, fy = fix_pos
 
         while True:
             # Check
@@ -300,7 +302,7 @@ class MyeLink:
                 return err
 
             # Perform drift correction
-            err = self.eyelink.doDriftCorrect(fix[0], fix[1], draw=1, allow_setup=0)
+            err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
             # break if successful
             if err != pylink.ESC_KEY:
                 break
