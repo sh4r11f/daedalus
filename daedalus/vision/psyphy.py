@@ -17,15 +17,15 @@
 #                       SPACE: Dartmouth College, Hanover, NH
 #
 # ==================================================================================================== #
-import sys
 from pathlib import Path
 from typing import Dict, Union, Tuple
+from datetime import date
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-from psychopy import core, monitors, visual, event, info, gui, data
+from psychopy import core, monitors, visual, event, info, gui
 from psychopy.iohub.devices import Computer
 
 import logging
@@ -72,27 +72,118 @@ class PsychoPhysicsExperiment:
         self.version = version
         self.platform = platform
         self.debug = debug
+        self.today = date.today().strftime("%b-%d-%Y")
+
+        # Confings
+        self.settings = None
+        self.exp_params = None
+        self.stim_params = None
+        self.monitor_params = None
 
         # Directories and files
-        self.dirs = self.init_directories()
-        self.files = self.init_files()
+        self.data_dir = None
+        self.log_dir = None
+        self.ses_data_dir = None
+        self.db_file = None
+        self.participants_file = None
+        self.log_file = None
+        self.stim_data_file = None
+        self.frames_data_file = None
+        self.behav_data_file = None
 
-        # Load config
-        self.settings = utils.read_config(self.files["settings"])
-        # easier access to the platform settings
-        self.platform_settings = self.settings["Platforms"][self.platform]
-        self.exp_params = utils.read_config(self.files["experiment_params"])
-        self.stim_params = utils.read_config(self.files["stimuli_params"])
-        monitor_name = self.platfrom_settings["Monitor"]
-        mon_params = utils.read_config(self.files["monitors"])
-        self.monitor_params = mon_params[monitor_name]
+        # Subject and session info
+        self.subj_id = None
+        self.ses_id = None
+        self.tasks = None
 
-        # Database
+        # Handlers
         self.logger = None
         self.db = None
         self.monitor = None
         self.window = None
-        self.clocks = None
+        self.global_clock = None
+        self.block_clock = None
+        self.trial_clock = None
+
+    def init_experiment(self):
+        """
+        """
+        # Initialize the settings and parameters
+        self.init_configs()
+
+        # Ask for subject information
+        subj, experimenter = self.hello_gui()
+        if subj == "Load":
+            subj_df = self.subject_registration_gui()
+        else:
+            subj_df = self.subject_loadation_gui()
+
+        # Set the subject and session info
+        self.subj_id = self._fix_id(subj_df["PID"].values[0])
+        self.ses_id = self._fix_id(self.session_selection_gui())
+        self.tasks = self._get_session_tasks()
+        subj_df["Experimenter"] = experimenter
+        for task in self.tasks:
+            subj_df[f"{task}Task"] = self.today
+
+        # Setup the directories and files
+        self.init_dirs()
+        self.init_files()
+
+        # Initialize the logging
+        self.init_logging()
+
+        # Start the database
+        self.init_database()
+
+        # Make monitor and window
+        self.init_display()
+
+        # Start session clock
+        self.global_clock = core.Clock()
+
+        return subj_df
+
+    def prepare_block(self, task_name, block_id, n_blocks):
+        """
+        Prepare the block for the task.
+
+        Args:
+            task_name (str): Task name.
+            block_id (int): Block ID.
+        """
+        self.setup_block_files(task_name, block_id)
+        self.block_clock = core.Clock()
+
+        # Show block info as text
+        txt = f"You are about to begin block {block_id}/{n_blocks}.\n\n"
+        txt += "Press Space to start."
+        resp = self.show_msg(txt)
+        if resp in ["escape", "ctrl+c"]:
+            self.logger.critical("User quit the experiment.")
+            self.goodbye("User quit.")
+        elif resp == "space":
+            self.logger.info(f"Starting block {block_id}.")
+
+    def prepare_trial(self, trial_num):
+        """
+        Prepare the trial for the block.
+
+        Args:
+            trial_num (int): Trial number.
+        """
+        self.trial_clock = core.MonotonicClock()
+
+    def init_configs(self):
+        """
+        Initialize the settings and parameters for the experiment.
+        """
+        config_dir = self.root / "config"
+        self.settings = utils.read_config(config_dir / "settings.yaml")
+        self.exp_params = utils.read_config(config_dir / "experiment.yaml")
+        self.stim_params = utils.read_config(config_dir / "stimuli.yaml")
+        monitor_name = self.settings["Platforms"][self.platform]["Monitor"]
+        self.monitor_params = utils.read_config(config_dir / "monitors.yaml")[monitor_name]
 
     def init_database(self):
         """
@@ -109,49 +200,38 @@ class PsychoPhysicsExperiment:
             n_sessions=self.exp_params["NumSessions"]
         )
 
-    def init_clocks(self):
-        """
-        Set up the clocks for the experiment.
-        """
-        self.clocks = {
-            "global": core.Clock(),
-            "block": core.Clock(),
-            "trial": core.Clock()
-        }
-
-    def init_dirs_dict(self) -> Dict:
+    def init_dirs(self) -> Dict:
         """
         Make a dictionary of relevant directories
 
         Returns
             dict: data, sub, and task keys and the corresponding Path objects as values.
         """
-        dirs = dict()
-
-        # Project
-        dirs["project"] = self.root
-
-        # Config directory
-        config_dir = self.root / "config"
-        dirs["config"] = config_dir
-
         # Data directory
-        data_dir = self.root / "data" / f"v{self.version}"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        dirs["data"] = data_dir
-
-        # Stimuli directory
-        stimuli_dir = self.root / "stimuli"
-        dirs["stimuli"] = stimuli_dir
+        self.data_dir = self.root / "data" / f"v{self.version}"
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Log directory
-        log_dir = self.root / "log" / f"v{self.version}"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        dirs["log"] = log_dir
+        self.log_dir = self.root / "log" / f"v{self.version}"
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        return dirs
+        # Subject directory
+        subj_data_dir = self.data_dir / f"sub-{self.subj_id}"
+        subj_data_dir.mkdir(parents=True, exist_ok=True)
 
-    def init_files_dict(self) -> Dict:
+        # Session directory
+        self.ses_data_dir = subj_data_dir / f"ses-{self.ses_id}"
+        self.ses_data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Experiment directory
+        exp_data_dir = self.ses_data_dir / "exp"
+        exp_data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Behavioral directory
+        behav_data_dir = self.ses_data_dir / "behav"
+        behav_data_dir.mkdir(parents=True, exist_ok=True)
+
+    def init_files(self) -> Dict:
         """
         Make a dictionary of important files. The structure of data files follows the BIDS convention.
             Example:
@@ -162,40 +242,21 @@ class PsychoPhysicsExperiment:
         Returns
             dict: participants, stimuli, and other files as keys and the corresponding Path objects as values.
         """
-        files = dict()
-
-        # Config files
-        set_file = self.directories["config"] / "settings.yaml"
-        if not set_file.exists():
-            raise FileNotFoundError(f"Settings file not found: {set_file}")
-        files["settings"] = set_file
-
-        # Parameters files
-        param_files = Path(self.directories["config"]).glob("*.yaml")
-        for file in param_files:
-            if file.stem != "settings":
-                files[f"{file.stem}_params"] = file
+        # Log file
+        self.log_file = self.log_dir / f"sub-{self.subj}_ses-{self.ses}.log"
+        if self.log_file.exists():
+            self.log_file.unlink()
+        self.log_file.touch()
 
         # sqlite database
-        db_file = self.directories["data"] / f"{self.name}_v{self.version}.db"
-        if not db_file.exists():
-            db_file.touch()
-        files["database"] = db_file
+        self.db_file = self.data_dir / f"{self.name}.db"
+        if not self.db_file.exists():
+            self.db_file.touch()
 
         # Participants file
-        part_file = self.directories["data"] / "participants.tsv"
-        if not part_file.exists():
-            self.init_participants_file()
-        files["participants"] = part_file
-
-        # Modules
-        modules = self.self.platfrom_settings["Modules"]
-        for mod in modules:
-            name = mod["name"]
-            path = mod["path"]
-            files[name] = Path(path)
-
-        return files
+        self.participants_file = self.data_dir / "participants.tsv"
+        if not self.part_file.exists():
+            self._init_participants_file()
 
     def init_logging(self):
         """
@@ -208,14 +269,14 @@ class PsychoPhysicsExperiment:
         self.logger = log_handler.get_logger(self.name)
 
         # Log file
-        if self.files["subj_log"].exists():
+        if self.log_file.exists():
             # clear the log file
-            self.files["subj_log"].unlink()
+            self.log_file.unlink()
         # create the log file
-        self.files["subj_log"].touch()
+        self.log_file.touch()
 
         # Add new handlers
-        log_handler.add_handlers(self.logger, self.files["subj_log"])
+        log_handler.add_handlers(self.logger, self.log_file)
 
         # Set the level of the handlers
         if self.debug:
@@ -232,82 +293,42 @@ class PsychoPhysicsExperiment:
         self.logger.info("Let's get started!")
         self.logger.info("-" * 80)
 
-    def _fix_id(self, id):
+    def _fix_id(self, id_):
         """
         Fix the ID of the subject or session to be a string with two digits.
 
         Args:
-            id (int): The ID to be fixed.
+            id_ (int): The ID to be fixed.
 
         Returns:
             str: The fixed ID.
         """
-        if isinstance(id, int):
-            fixed = f"{id:02d}"
-        elif isinstance(id, str) and len(id) == 1:
-            fixed = f"0{id}"
+        if isinstance(id_, int):
+            fixed = f"{id_:02d}"
+        elif isinstance(id_, str) and len(id_) == 1:
+            fixed = f"0{id_}"
         return fixed
 
-    def _get_session_tasks(self, ses_id):
+    def _get_session_tasks(self):
         """
         Get the tasks for the session.
-
-        Args:
-            ses_id (int): Session number.
 
         Returns:
             list: List of tasks for the session.
         """
-        return utils.find_in_configs(self.exp_params["Tasks"], "Session", ses_id)["tasks"]
+        return utils.find_in_configs(self.exp_params["Tasks"], "Session", self.ses_id)["tasks"]
 
     def _get_task_blocks(self, task_name):
         """
         Get the blocks for the task.
 
         Args:
-            task_id (str): Task ID.
+            task_name (str): Task name.
 
         Returns:
             list: List of blocks for the task.
         """
         return self.exp_params["Tasks"][task_name]["blocks"]
-
-    def setup_session_dirs(self, subj_id, ses_id):
-        """
-        Add directories and files for a subject in a session.
-
-        Args:
-            subj_id (int or str): Subject ID
-            ses_id (int or str): Session number
-        """
-        # Fix the IDs
-        subj_id = self._fix_id(subj_id)
-        ses_id = self._fix_id(ses_id)
-
-        # Subject directory
-        subj_data_dir = self.dirs["data"] / f"sub-{subj_id}"
-        subj_data_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["subj_data"] = subj_data_dir
-
-        # Session directory
-        ses_data_dir = subj_data_dir / f"ses-{ses_id}"
-        ses_data_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["ses_data"] = ses_data_dir
-
-        # Experiment directory
-        exp_data_dir = ses_data_dir / "exp"
-        exp_data_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["exp_data"] = exp_data_dir
-
-        # Behavioral directory
-        behav_data_dir = ses_data_dir / "behav"
-        behav_data_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["behavioral_data"] = behav_data_dir
-
-        # Log directory
-        log_data_dir = ses_data_dir / "log"
-        log_data_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["log_data"] = log_data_dir
 
     def _init_stim_data_file(self, file_name):
         """
@@ -345,7 +366,7 @@ class PsychoPhysicsExperiment:
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
 
-    def setup_block_files(self, subj_id, ses_id, task_name, block_name, block_id):
+    def setup_block_files(self, task_name, block_id):
         """
         Add directories and files for a block in a task.
 
@@ -356,39 +377,30 @@ class PsychoPhysicsExperiment:
             block_name (str): Block name
             block_id (int or str): Block ID
         """
-        # Fix the IDs
-        subj_id = self._fix_id(subj_id)
-        ses_id = self._fix_id(ses_id)
-        block_id = self._fix_id(block_id)
-
-        stim_file = self.dirs["stim_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_stimuli.csv"
+        stim_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_stimuli.csv"
         if not stim_file.exists():
-            self._init_trials_data_file(stim_file)
+            self._init_stim_file(stim_file)
         else:
-            raise FileExistsError(f"Experiment file already exists: {str(stim_file)}")
+            self.logger.critical(f"Stimuli file already exists: {str(stim_file)}")
+            self.goodbye(f"Stimuli file already exists: {str(stim_file)}")
 
-        frames_file = self.dirs["trials_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_FrameIntervals.csv"
+        frames_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_FrameIntervals.csv"
         if not frames_file.exists():
             self._init_frame_intervals_file(frames_file)
         else:
-            raise FileExistsError(f"Frame intervals file already exists: {str(frames_file)}")
+            self.logger.critical(f"Frame intervals file already exists: {str(frames_file)}")
+            self.goodbye(f"Frame intervals file already exists: {str(frames_file)}")
 
-        behav_file = self.dirs["behavioral_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_behavioral.csv"
+        behav_file = self.ses_data_dir / "behav" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_behavioral.csv"
         if not behav_file.exists():
             self._init_behav_data_file(behav_file)
         else:
-            raise FileExistsError(f"Behavioral file already exists: {str(behav_file)}")
+            self.logger.critical(f"Behavioral file already exists: {str(behav_file)}")
+            self.goodbye(f"Behavioral file already exists: {str(behav_file)}")
 
-        log_file = self.dirs["log_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_log.log"
-        if not log_file.exists():
-            log_file.touch()
-        else:
-            raise FileExistsError(f"Log file already exists: {str(log_file)}")
-
-        self.files["stim_data"] = stim_file
-        self.files["frame_intervals"] = frames_file
-        self.files["behavioral_data"] = behav_file
-        self.files["block_log"] = log_file
+        self.stim_data_file = stim_file
+        self.frames_data_file = frames_file
+        self.behav_data_file = behav_file
 
     def init_display(self) -> Tuple:
         """
@@ -470,14 +482,16 @@ class PsychoPhysicsExperiment:
             labelButtonCancel="Away with you",
             alwaysOnTop=True
         )
-        dlg.addText("Experiment", self.name, color="blue")
-        dlg.addText("Date", data.getDateStr(), color="blue")
+        dlg.addText("Date", self.today, color="blue")
+        dlg.addFixedField("Experiment", self.name, color="blue")
         dlg.addFixedField("Version", self.version)
+
+        dlg.addField("Experimenter", choices=[a["name"] for a in self.settings["Study"]["Authors"]])
         dlg.addField("Participant", choices=["Register", "Load"])
 
         dlg.show()
         if dlg.OK:
-            return dlg.data[0]
+            return dlg.data
         else:
             raise ValueError("Experiment cancelled.")
 
@@ -498,8 +512,8 @@ class PsychoPhysicsExperiment:
             labelButtonCancel="Go Away",
             alwaysOnTop=True
         )
-        dlg.addText("Experiment", self.name, color="blue")
-        dlg.addText("Date", data.getDateStr(), color="blue")
+        dlg.addText("Date", self.today, color="blue")
+        dlg.addFixedField("Experiment", self.name)
         dlg.addFixedField("Version", self.version)
 
         # Check what PIDs are already used
@@ -547,8 +561,8 @@ class PsychoPhysicsExperiment:
             labelButtonCancel="Go Away",
             alwaysOnTop=True
         )
-        dlg.addText("Experiment", self.name, color="blue")
-        dlg.addText("Date", data.getDateStr(), color="blue")
+        dlg.addText("Date", self.today, color="blue")
+        dlg.addFixedField("Experiment", self.name, color="blue")
         dlg.addFixedField("Version", self.version)
 
         # Find the PID and initials that are registered
@@ -568,12 +582,9 @@ class PsychoPhysicsExperiment:
         else:
             raise ValueError("Subject loadation cancelled.")
 
-    def session_selection_gui(self, subj_info: pd.DataFrame):
+    def session_selection_gui(self):
         """
         GUI for choosing the session.
-
-        Args:
-            subj_info (pd.DataFrame): The subject info as a pandas DataFrame.
 
         Returns:
             int: The session number.
@@ -588,12 +599,13 @@ class PsychoPhysicsExperiment:
             labelButtonCancel="Go Away",
             alwaysOnTop=True
         )
-        dlg.addText("Experiment", self.name, color="blue")
-        dlg.addText("Date", data.getDateStr(), color="blue")
+        dlg.addText("Date", self.today, color="blue")
+        dlg.addFixedField("Experiment", self.name, color="blue")
         dlg.addFixedField("Version", self.version)
 
         # Add the subject info
         valid_info_fields = ["PID"] + list(self.exp_params["SubjectInfo"].keys())
+        subj_info = self.load_subject_info()
         for field in subj_info.columns:
             if field in valid_info_fields:
                 dlg.addFixedField(field, subj_info[field].values[0])
@@ -607,59 +619,13 @@ class PsychoPhysicsExperiment:
         # Show the dialog
         dlg.show()
         if dlg.OK:
-            return int(dlg.data[0])
+            return dlg.data[-1]
         else:
             raise ValueError("Session selection cancelled.")
 
-    def task_selection_gui(self, subj_info: pd.DataFrame):
-        """
-        GUI for choosing the task.
-
-        Args:
-            subj_info (pd.DataFrame): The subject info as a pandas DataFrame.
-
-        Returns:
-            str: The task name.
-
-        Raises:
-            ValueError: If the task selection is cancelled.
-        """
-        # Make the dialog
-        dlg = gui.Dlg(
-            title="Task Selection",
-            labelButtonOK="Alright",
-            labelButtonCancel="Go Away",
-            alwaysOnTop=True
-        )
-        dlg.addText("Experiment", self.name, color="blue")
-        dlg.addText("Date", data.getDateStr(), color="blue")
-        dlg.addFixedField("Version", self.version)
-
-        # Add the subject info
-        valid_info_fields = ["PID"] + list(self.exp_params["SubjectInfo"].keys())
-        for field in subj_info.columns:
-            if field in valid_info_fields:
-                dlg.addFixedField(field, subj_info[field].values[0])
-
-        # Find the tasks that are available
-        tasks = list(self.exp_params["Tasks"].keys())
-        burnt_tasks = subj_info.columns[subj_info.columns.str.contains("Task")].values
-        available_tasks = [task for task in tasks if task not in burnt_tasks]
-        dlg.addField("Task", choices=available_tasks)
-
-        # Show the dialog
-        dlg.show()
-        if dlg.OK:
-            return dlg.data[0]
-        else:
-            raise ValueError("Task selection cancelled.")
-
-    def load_subject_info(self, pid: str):
+    def load_subject_info(self):
         """
         Loads the subject info from the subject file.
-
-        Args:
-            pid (str): Participant ID
 
         Returns:
             pd.DataFrame: The subject info as a pandas DataFrame.
@@ -667,11 +633,11 @@ class PsychoPhysicsExperiment:
         Raises:
             ValueError: If the PID is not found in the participants file.
         """
-        df = pd.read_csv(self.files["participants"], sep="\t")
-        if pid in df["PID"].values:
-            return df.loc[df["PID"] == pid, :]
+        df = pd.read_csv(self.participants_file, sep="\t")
+        if self.subj_id in df["PID"].values:
+            return df.loc[df["PID"] == self.subj_id, :]
         else:
-            raise ValueError(f"PID {pid} not found in the participant file.")
+            raise ValueError(f"PID {self.subj_id} not found in the participant file.")
 
     def load_participants_file(self):
         """
@@ -680,30 +646,39 @@ class PsychoPhysicsExperiment:
         Returns:
             pd.DataFrame: The participants file as a pandas DataFrame.
         """
-        return pd.read_csv(self.files["participants"], sep="\t")
+        return pd.read_csv(self.participants_file, sep="\t")
 
-    def init_participants_file(self):
+    def _init_participants_file(self):
         """
         Initializes the participants file.
         """
-        columns = list(self.exp_params["Info"]["Subject"].keys())
+        columns = list(self.exp_params["SubjectInfo"].keys())
         columns += [f"{task}Task" for task in self.exp_params["Tasks"].keys()]
         columns += ["Experimenter", "ExperimentName", "Version"]
         df = pd.DataFrame(columns=columns)
-        df.to_csv(self.files["participants"], sep="\t", index=False)
+        df.to_csv(self.participants_file, sep="\t", index=False)
 
-    def save_participants_file(self, subject_info):
+    def save_subject_info(self, subject_info):
         """
         Saves the subject info to the participants file.
 
         Args:
             subject_info (dict or DataFrame): The subject info as a dictionary.
         """
-        df = pd.read_csv(self.files["participants"], sep="\t")
+        df = pd.read_csv(self.participants_file, sep="\t")
         if isinstance(subject_info, dict):
             sub_df = pd.DataFrame([subject_info], columns=subject_info.keys())
-        out_df = pd.concat([df, sub_df], ignore_index=True)
-        out_df.to_csv(self.files["participants"], sep="\t", index=False)
+
+        existing_pids = df["PID"].values
+        if self.subj_id in existing_pids:
+            # replace the existing row
+            df.loc[df["PID"] == self.subj_id, :] = sub_df
+        else:
+            # append the new row
+            out_df = pd.concat([df, sub_df], ignore_index=True)
+
+        # Save the file
+        out_df.to_csv(self.participants_file, sep="\t", index=False)
 
     def system_check(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
         """
@@ -724,7 +699,7 @@ class PsychoPhysicsExperiment:
 
         # Start testing
         self.logger.info("Running system checks.")
-        warnings = ""
+        warnings = "<Press Space to continue or Escape to quit>\n\n"
 
         # Test the refresh rate of the monitor
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
@@ -821,6 +796,7 @@ class PsychoPhysicsExperiment:
             if isinstance(wait_keys, list):
                 if all(isinstance(k, tuple) for k in wait_keys):
                     valid_keys += wait_keys
+
         key_press = None
         while True:
             # Check for key presses
@@ -843,29 +819,26 @@ class PsychoPhysicsExperiment:
                 core.wait(wait_time)
                 break
 
-        if key_press == "escape" or key_press == "ctrl+c":
-            self.goodbye()
-        else:
-            self.clear_screen()
-            return key_press
+        self.clear_screen()
+        return key_press
 
-    def goodbye(self):
+    def goodbye(self, raise_error=None):
         """
         Closes and ends the experiment.
         """
         self.logger.info("Bye bye experiment.")
         self.window.close()
-        core.quit()
-        sys.exit()
+        if raise_error is not None:
+            raise SystemExit(f"Experiment ended with error: {raise_error}.")
+        else:
+            core.quit()
 
     def enable_force_quit(self, key_press: str = 'escape'):
         """
         Quits the experiment during runtime if a key (default 'space') is pressed.
 
-        Parameters
-        ----------
-        key_press : str
-            keyboard button to press to quit the experiment.
+        Args:
+            key_press (str): The key to press to quit the experiment.
         """
         # Get the keypress from user
         pressed = event.getKeys()
@@ -873,7 +846,7 @@ class PsychoPhysicsExperiment:
         # Check if it's the quit key
         if key_press in pressed:
             self.logger.critical("Force quitting...")
-            self.goodbye()
+            self.goodbye("User force quit.")
 
     def check_frame_durations(self, frame_intervals: Union[list, np.array]):
         """
@@ -894,8 +867,8 @@ class PsychoPhysicsExperiment:
         return n_dropped
 
     def ms2fr(self, duration: float):
-        """ Converts durations from ms to display frames"""
-        return np.ceil(duration * self.params["refresh_rate"] / 1000).astype(int)
+        """Converts durations from ms to display frames"""
+        return np.ceil(self.monitor_params["refresh_rate"] * duration / 1000).astype(int)
 
 
 class PsychoPhysicsDatabase:

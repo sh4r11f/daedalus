@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../../Dropbox (Dartmouth College)/Resources/Eye-tracking/SampleExperiments/Python/64/3.10/pylink"
+		},
+		{
+			"path": "../../Dropbox (Dartmouth College)/Resources/Eye-tracking/SampleExperiments/Python/examples"
 		}
 	],
 	"settings": {}
