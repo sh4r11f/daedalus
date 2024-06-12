@@ -64,6 +64,9 @@ class Eyetracking(PsychoPhysicsExperiment):
         err = self.tracker.connect()
 
         if err is None:
+            graphics = self.forge_graphics_env()
+            self.tracker.openGraphicsEx(graphics)
+            self.logger.info(f"Connected to {self.tracker_model}.")
             msg = f"(✓) Connected to {self.tracker_model} successfully."
         else:
             self.logger.critical(f"Failed to connect to {self.tracker_model}: {err}")
@@ -108,16 +111,6 @@ class Eyetracking(PsychoPhysicsExperiment):
         genv.setDriftCorrectSounds("", "", "")
 
         return genv
-
-    def show_calibration_msg(self):
-        """
-        Shows a message before starting the calibration.
-        """
-        msg = "In the next screen, press ENTER then C to recalibrate.\n\n"
-        msg += "Once the calibration is done, press ENTER then O to resume the experiment.\n\n"
-        msg += "Press any key to continue..."
-
-        self.show_msg(msg)
 
     def check_fixation_in_square(self, center, radius, fix_coords):
         """
@@ -197,18 +190,27 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         return fixated
 
-    def recalibrate(self):
+    def run_calibration(self, retry=3):
         """
         """
-        self.tracker.
-        self.show_calibration_msg()
-        err = self.tracker.calibrate()
-        if err is not None:
-            self.logger.critical(f"Recalibration failed: {err}")
-            return err
-        self.logger.info("Recalibration successful.")
+        # Message
+        msg = "In the next screen, press `c` to calibrate the eyetracker.\n\n"
+        msg += "Once the calibration is done, press `Enter` to accept the calibration and resume the experiment.\n\n"
+        msg += "Press any key to continue..."
+        self.show_msg(msg)
+        for _ in range(retry):
+            error = self.tracker.calibrate()
+            if error is not None:
+                self.logger.critical(f"Calibration failed: {error}")
+            else:
+                self.logger.info("Calibration successful.")
+                break
 
-    def monitor_fixation(self, fixation, timeout, radi, method="circle"):
+        if error is not None:
+            self.goodbye()
+        return error
+
+    def monitor_fixation(self, fixation, radi, method="circle"):
         """
         Monitor fixation.
 
@@ -225,21 +227,109 @@ class Eyetracking(PsychoPhysicsExperiment):
 
         if events["fixation_end"]:
             self.logger.critical("Fixation lost.")
-            return "Fixation lost."
+            return False
 
+        valid_updates = []
         if events["fixation_update"]:
             for event in events["fixation_update"]:
                 gaze_x = event["gaze_x"]
                 gaze_y = event["gaze_y"]
                 if method == "circle":
-                    valid = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
+                    check = self.check_fixation_in_circle(fixation.pos[0], fixation.pos[1], gaze_x, gaze_y, radi)
                 else:
                     raise NotImplementedError("Only circle method is implemented.")
-                if valid:
-                    self.logger.info("Fixation updated.")
-                else:
-                    self.logger.critical("Fixation lost.")
-                    return "Fixation lost."
+                valid_updates.append(check)
+
+        if all(valid_updates):
+            fixated = True
+            self.logger.info("Fixation updated.")
+        else:
+            fixated = False
+            self.logger.critical("Fixation lost.")
+
+        return fixated
+
+    def setup_session_dirs(self, subj_id, ses_id):
+        """
+        """
+        # Create directories for the session
+        super().setup_session_dirs(subj_id, ses_id)
+
+        # Add eyetracking specific directories
+        eye_data_dir = self.session_dir / "eye"
+        eye_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["eye_data"] = eye_data_dir
+
+    def _init_eye_events_file(self, file_path):
+        """
+        """
+        columns = [
+            "TrialIndex", "TrialNum", 
+            "EventType", "EventStart", "EventEnd", "EventDuration",
+            "GazeStartX", "GazeStartY", "GazeEndX", "GazeEndY", "GazeAvgX", "GazeAvgY",
+            "PPDStartX", "PPDStartY", "PPDEndX", "PPDEndY", "PPDAvgX", "PPDAvgY",
+            "DVAAvgX", "DVAAvgY",
+            "PupilStart", "PupilEnd", "PupilAvg",
+            "AmplitudeX", "AmplitudeY", 
+            "VelocityStart", "VelocityEnd", "VelocityAvg", "VelocityPeak"
+        ]
+
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file_path, index=False)
+
+    def _init_eye_samples_file(self, file_path):
+        """
+        """
+        columns = [
+            "TrialIndex", "TrialNum",
+            "EventType", "SampleTime",
+            "GazeX", "GazeY",
+            "PPDX", "PPDY",
+            "Pupil"
+        ]
+
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file_path, index=False)
+
+    def setup_block_files(self, subj_id, ses_id, task_name, block_name, block_id):
+        """
+        """
+        super().setup_block_files(subj_id, ses_id, task_name, block_name, block_id)
+
+        # Add eyetracking specific files
+        eye_events_file = self.dirs["eye_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_{block_name}_EyeEvents.csv"
+        eye_samples_file = self.dirs["eye_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_{block_name}_EyeSamples.csv"
+
+    def setup_block(self, calib=False):
+        """
+        """
+        # Setup files for logging and saving this block
+
+        # Get rid of the previous data and become idle
+        self.tracker.go_offline()
+
+        # Calibrate if needed
+        if calib:
+            self.run_calibration()
+
+        # Start recording
+
+    def end_block(self):
+        """
+        """
+        # Stop recording
+        self.tracker.stop_recording()
+        self.tracker.resetData()
+
+        # Clear the screen
+        self.clear_screen()
+
+        # Send a message to clear the Data Viewer screen
+        bgcolor_RGB = (116, 116, 116)
+        self.tracker.send_message('!V CLEAR %d %d %d' % bgcolor_RGB)
+
+        # Send a message to mark the end of the block
+        self.tracker.send_message('BLOCK_END')
 
 class EyeTrackingDatabase(PsychoPhysicsDatabase):
     """

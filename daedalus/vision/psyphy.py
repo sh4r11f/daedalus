@@ -248,7 +248,7 @@ class PsychoPhysicsExperiment:
             fixed = f"0{id}"
         return fixed
 
-    def _get_tasks(self, ses_id):
+    def _get_session_tasks(self, ses_id):
         """
         Get the tasks for the session.
 
@@ -260,7 +260,19 @@ class PsychoPhysicsExperiment:
         """
         return utils.find_in_configs(self.exp_params["Tasks"], "Session", ses_id)["tasks"]
 
-    def setup_subject_dirs_files(self, subj_id, ses_id):
+    def _get_task_blocks(self, task_name):
+        """
+        Get the blocks for the task.
+
+        Args:
+            task_id (str): Task ID.
+
+        Returns:
+            list: List of blocks for the task.
+        """
+        return self.exp_params["Tasks"][task_name]["blocks"]
+
+    def setup_session_dirs(self, subj_id, ses_id):
         """
         Add directories and files for a subject in a session.
 
@@ -273,34 +285,112 @@ class PsychoPhysicsExperiment:
         ses_id = self._fix_id(ses_id)
 
         # Subject directory
-        subj_dir = self.dirs["data"] / f"sub-{subj_id}"
-        subj_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["subj_data"] = subj_dir
-
-        # Log directory
-        subj_log_dir = self.dirs["log"] / f"sub-{subj_id}"
-        subj_log_dir.mkdir(parents=True, exist_ok=True)
-        # Log file
-        log_file = subj_log_dir / f"sub-{subj_id}_ses-{ses_id}_exp-{self.name}_v{self.version}.log"
-        self.dirs["subj_log"] = subj_log_dir
-        self.files["subj_log"] = str(log_file)
+        subj_data_dir = self.dirs["data"] / f"sub-{subj_id}"
+        subj_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["subj_data"] = subj_data_dir
 
         # Session directory
-        ses_dir = subj_dir / f"ses-{ses_id}"
-        ses_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["session_data"] = ses_dir
+        ses_data_dir = subj_data_dir / f"ses-{ses_id}"
+        ses_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["ses_data"] = ses_data_dir
+
+        # Experiment directory
+        exp_data_dir = ses_data_dir / "exp"
+        exp_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["exp_data"] = exp_data_dir
 
         # Behavioral directory
-        beh_dir = ses_dir / "behavioral"
-        beh_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["behavioral_data"] = beh_dir
+        behav_data_dir = ses_data_dir / "behav"
+        behav_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["behavioral_data"] = behav_data_dir
 
-        # Stimuli directory
-        stim_dir = ses_dir / "stimuli"
-        stim_dir.mkdir(parents=True, exist_ok=True)
-        self.dirs["stimuli_data"] = stim_dir
+        # Log directory
+        log_data_dir = ses_data_dir / "log"
+        log_data_dir.mkdir(parents=True, exist_ok=True)
+        self.dirs["log_data"] = log_data_dir
 
-    def make_display(self) -> Tuple:
+    def _init_stim_data_file(self, file_name):
+        """
+        Initialize an experiment data file.
+        """
+        columns = [
+            "TrialNum", "TrialDurationMS",
+            "StimName", "StimOnset", "StimDurationMS", "StimDurationFrames",
+            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+        ]
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file_name, sep=",", index=False)
+
+    def _init_behav_data_file(self, file_name):
+        """
+        Initialize a behavioral data file.
+        """
+        columns = [
+            "TrialNum", "TrialDurationMS",
+            "ResponseKey", "Choice", "RT", "Correct",
+            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+        ]
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file_name, sep=",", index=False)
+
+    def _init_frame_intervals_file(self, file_name):
+        """
+        Initialize a frame intervals file.
+        """
+        columns = [
+            "TrialNum", "TrialDurationMS",
+            "FrameNum", "FrameDurationMS",
+            "BlockNum", "BlockName", "TaskName", "SessionNum", "SubjectID", "ExperimentName"
+        ]
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file_name, sep=",", index=False)
+
+    def setup_block_files(self, subj_id, ses_id, task_name, block_name, block_id):
+        """
+        Add directories and files for a block in a task.
+
+        Args:
+            subj_id (int or str): Subject ID
+            ses_id (int or str): Session number
+            task_name (str): Task name
+            block_name (str): Block name
+            block_id (int or str): Block ID
+        """
+        # Fix the IDs
+        subj_id = self._fix_id(subj_id)
+        ses_id = self._fix_id(ses_id)
+        block_id = self._fix_id(block_id)
+
+        stim_file = self.dirs["stim_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_stimuli.csv"
+        if not stim_file.exists():
+            self._init_trials_data_file(stim_file)
+        else:
+            raise FileExistsError(f"Experiment file already exists: {str(stim_file)}")
+
+        frames_file = self.dirs["trials_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_FrameIntervals.csv"
+        if not frames_file.exists():
+            self._init_frame_intervals_file(frames_file)
+        else:
+            raise FileExistsError(f"Frame intervals file already exists: {str(frames_file)}")
+
+        behav_file = self.dirs["behavioral_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_behavioral.csv"
+        if not behav_file.exists():
+            self._init_behav_data_file(behav_file)
+        else:
+            raise FileExistsError(f"Behavioral file already exists: {str(behav_file)}")
+
+        log_file = self.dirs["log_data"] / f"sub-{subj_id}_ses-{ses_id}_task-{task_name}_block-{block_id}_log.log"
+        if not log_file.exists():
+            log_file.touch()
+        else:
+            raise FileExistsError(f"Log file already exists: {str(log_file)}")
+
+        self.files["stim_data"] = stim_file
+        self.files["frame_intervals"] = frames_file
+        self.files["behavioral_data"] = behav_file
+        self.files["block_log"] = log_file
+
+    def init_display(self) -> Tuple:
         """
         Makes psychopy monitor and window objects to be used in the experiment. Relies on the name of the monitor
         specified in confing/parameters.json and monitor specification found in config/monitors.json
@@ -360,7 +450,9 @@ class PsychoPhysicsExperiment:
         else:
             window.mouseVisible = False
 
-        return monitor, window
+        # Return the monitor and window objects
+        self.monitor = monitor
+        self.window = window
 
     def hello_gui(self):
         """
@@ -507,9 +599,9 @@ class PsychoPhysicsExperiment:
                 dlg.addFixedField(field, subj_info[field].values[0])
 
         # Find the sessions that are available
-        sessions = [int(ses["id"]) for ses in self.exp_params["Sessions"]]
-        burnt_sessions = subj_info.columns[subj_info.columns.str.contains("Session")].values.astype(int)
-        available_sessions = [session for session in sessions if session not in burnt_sessions]
+        sessions = [ses["id"] for ses in self.exp_params["Sessions"]]
+        burnt_sessions = subj_info.columns[subj_info.columns.str.contains("Session")].values
+        available_sessions = [sid for sid in sessions if sid not in burnt_sessions]
         dlg.addField("Session", choices=available_sessions)
 
         # Show the dialog
@@ -697,7 +789,7 @@ class PsychoPhysicsExperiment:
         # Flip the window
         self.window.flip()
 
-    def show_msg(self, text, wait_for_keypress: bool = True, wait_time: int = 3):
+    def show_msg(self, text, wait_keys=True, wait_time=0):
         """ Show task instructions on screen"""
 
         # Make a message stimulus
@@ -718,17 +810,44 @@ class PsychoPhysicsExperiment:
         msg.draw()
         self.window.flip()
 
-        # wait indefinitely, terminates upon any key press
-        if wait_for_keypress:
-            # Ctrl + C quits the experiment. Resume otherwise.
-            pressed = event.waitKeys(modifiers=True)
-            if (pressed[0] == 'c') and pressed[1]['ctrl']:
-                self.goodbye()
-        else:
-            core.wait(wait_time)
+        # Wait indefinitely, terminates upon any key press or timeout
+        if wait_keys:
+            valid_keys = [
+                ("enter", None),
+                ("space", None),
+                ("escape", None),
+                ("c", "ctrl")
+            ]
+            if isinstance(wait_keys, list):
+                if all(isinstance(k, tuple) for k in wait_keys):
+                    valid_keys += wait_keys
+        key_press = None
+        while True:
+            # Check for key presses
+            if wait_keys:
+                pressed = event.getKeys(modifiers=True)
+                for pk, mods in pressed:
+                    pms = [mod for mod, val in mods.items() if val]
+                    for vk, vm in valid_keys:
+                        if vm is None:
+                            if pk == vk:
+                                key_press = pk
+                        else:
+                            if (pk == vk) and (vm in pms):
+                                key_press = "+".join([vm, vk])
+                # Break if a key is pressed
+                if key_press is not None:
+                    break
+            # Wait for a certain amount of time
+            if wait_time:
+                core.wait(wait_time)
+                break
 
-        # Clear the screen again
-        self.clear_screen()
+        if key_press == "escape" or key_press == "ctrl+c":
+            self.goodbye()
+        else:
+            self.clear_screen()
+            return key_press
 
     def goodbye(self):
         """
