@@ -103,9 +103,19 @@ class Eyetracking(PsychoPhysicsExperiment):
             self.logger.critical("User quit the experiment.")
             self.goodbye("User quit.")
         elif resp == "space":
+            if calib:
+                txt = "Recalibration is required!\n\n"
+                txt += "Press Enter to recalibrate the eye tracker."
+                resp = self.show_msg(txt)
+                if resp == "escape":
+                    self.logger.critical("User quit the experiment.")
+                    self.goodbye("User quit.")
+                elif resp == "enter":
+                    self.logger.info("Recalibrating the eye tracker.")
+                    self.run_calibration()
             self.logger.info(f"Starting block {block_id}.")
         elif resp == "enter":
-            self.logger.info(f"Recalibrating the eye tracker.")
+            self.logger.info("Recalibrating the eye tracker.")
             self.run_calibration()
 
     def prepare_trial(self, trial_id, fix_pos=None):
@@ -428,13 +438,13 @@ class Eyetracking(PsychoPhysicsExperiment):
         """
         """
         columns = [
-            "TrialIndex", "TrialNum", 
+            "TrialIndex",
             "EventType", "EventStart", "EventEnd", "EventDuration",
             "GazeStartX", "GazeStartY", "GazeEndX", "GazeEndY", "GazeAvgX", "GazeAvgY",
             "PPDStartX", "PPDStartY", "PPDEndX", "PPDEndY", "PPDAvgX", "PPDAvgY",
             "DVAAvgX", "DVAAvgY",
             "PupilStart", "PupilEnd", "PupilAvg",
-            "AmplitudeX", "AmplitudeY", 
+            "AmplitudeX", "AmplitudeY",
             "VelocityStart", "VelocityEnd", "VelocityAvg", "VelocityPeak"
         ]
 
@@ -445,7 +455,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         """
         """
         columns = [
-            "TrialIndex", "TrialNum",
+            "TrialIndex",
             "EventType", "SampleTime",
             "GazeX", "GazeY",
             "PPDX", "PPDY",

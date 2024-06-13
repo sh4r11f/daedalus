@@ -126,6 +126,7 @@ class PsychoPhysicsExperiment:
         # Set the subject and session info
         self.subj_id = self._fix_id(subj_df["PID"].values[0])
         self.ses_id = self._fix_id(self.session_selection_gui())
+        self.tasks = self._get_session_tasks()
         subj_df["Experimenter"] = experimenter
 
         # Setup the directories and files
@@ -339,7 +340,7 @@ class PsychoPhysicsExperiment:
         columns = [
             "TrialIndex", "TrialDurationMS", "TrialDurationFrames",
             # "StimName", "StimOnset", "StimDurationMS", "StimDurationFrames",
-            "BlockID", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
+            "BlockID", "BlockName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
@@ -349,9 +350,9 @@ class PsychoPhysicsExperiment:
         Initialize a behavioral data file.
         """
         columns = [
-            "TrialIndex", "TrialDurationMS", "TrialDurationFrames",
+            "TrialIndex",
             "ResponseKey", "Choice", "RT", "Correct",
-            "BlockNum", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
+            "BlockNum", "BlockName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
@@ -363,7 +364,7 @@ class PsychoPhysicsExperiment:
         columns = [
             "TrialIndex",
             "FrameNum", "FrameDurationMS",
-            "BlockID", "BlockName", "TaskName", "SessionID", "SubjectID", "ExperimentName"
+            "BlockID", "BlockName"
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)

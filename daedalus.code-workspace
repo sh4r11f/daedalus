@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../../Dropbox (Dartmouth College)/Resources/Eye-tracking/SampleExperiments/Python/examples"
+		},
+		{
+			"path": "../../tools/psychopy/psychopy"
 		}
 	],
 	"settings": {}
