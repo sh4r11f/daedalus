@@ -439,13 +439,6 @@ class Eyetracking(PsychoPhysicsExperiment):
         """
         columns = [
             "TrialIndex",
-            "EventType", "EventStart", "EventEnd", "EventDuration",
-            "GazeStartX", "GazeStartY", "GazeEndX", "GazeEndY", "GazeAvgX", "GazeAvgY",
-            "PPDStartX", "PPDStartY", "PPDEndX", "PPDEndY", "PPDAvgX", "PPDAvgY",
-            "DVAAvgX", "DVAAvgY",
-            "PupilStart", "PupilEnd", "PupilAvg",
-            "AmplitudeX", "AmplitudeY",
-            "VelocityStart", "VelocityEnd", "VelocityAvg", "VelocityPeak"
         ]
 
         df = pd.DataFrame(columns=columns)
@@ -456,10 +449,6 @@ class Eyetracking(PsychoPhysicsExperiment):
         """
         columns = [
             "TrialIndex",
-            "EventType", "SampleTime",
-            "GazeX", "GazeY",
-            "PPDX", "PPDY",
-            "Pupil"
         ]
 
         df = pd.DataFrame(columns=columns)

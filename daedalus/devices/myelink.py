@@ -206,6 +206,15 @@ class MyeLink:
         self.eyelink.sendMessage("Graphics_OK")
         self.delay()
 
+    def time(self):
+        """
+        Get the time from the Eyelink tracker
+
+        Returns:
+            float: The time.
+        """
+        return self.eyelink.trackerTime()
+
     def flush(self):
         """
         Flush the Eyelink buffer
