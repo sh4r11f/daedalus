@@ -88,18 +88,10 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        error = None
         if self.dummy:
             self.eyelink = pylink.EyeLink(None)
         else:
-            try:
-                self.eyelink = pylink.EyeLink(self.tracker_config["Connection"]["ip_address"])
-                self.send_code("con", "ok")
-            except RuntimeError as e:
-                error = self.codex.code("con", "fail")
-                print("Error: ", e)
-
-        return error
+            self.eyelink = pylink.EyeLink(self.tracker_config["Connection"]["ip_address"])
 
     def terminate(self, host_file, display_file):
         """
@@ -112,10 +104,13 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        error = None
-
         # Check connection
-        if self.eyelink.isConnected():
+        con_err = self.eyeLink.isConnected()
+        if con_err:
+            con_status = self.send_code("con", "fail")
+
+        else:
+            con_status = self.send_code("con", "ok")
 
             # Stop recording
             if self.eyelink.isRecording():
@@ -125,36 +120,35 @@ class MyeLink:
                 self.delay()
                 self.send_code("rec", "stop")
 
-            # Send the tracker to offline mode
-            self.go_offline()
+                # Send the tracker to offline mode
+                self.go_offline()
 
-            # Clear screen
-            self.eyelink.sendCommand('clear_screen 0')
-            self.delay()
+                # Clear screen
+                self.eyelink.sendCommand('clear_screen 0')
+                self.delay()
 
-            # Close the edf data file on the Host
-            self.eyelink.closeDataFile()
-            self.delay()
+                # Close the edf data file on the Host
+                self.eyelink.closeDataFile()
+                self.delay()
 
-            # Download the EDF data file from the Host PC to the Display PC
-            try:
-                self.eyelink.receiveDataFile(host_file, display_file)
-                self.send_code("dl", "ok")
-            except RuntimeError as e:
-                error = self.send_code("dl", "fail")
-                print("Error: ", e)
+                # Download the EDF data file from the Host PC to the Display PC
+                try:
+                    self.eyelink.receiveDataFile(host_file, display_file)
+                    file_status = self.send_code("file", "ok")
+                    file_err = None
+                except RuntimeError as e:
+                    file_status = self.send_code("file", "fail")
+                    file_err = e
 
-            # Close the connection to the tracker
-            self.eyelink.closeGraphics()
-            err = self.eyelink.close()
-            if not err:
-                self.send_code("end", "ok")
-            else:
-                error = self.send_code("end", "fail")
-        else:
-            error = self.send_code("con", "lost")
+                # Close the connection to the tracker
+                self.eyelink.closeGraphics()
+                close_err = self.eyelink.close()
+                if not close_err:
+                    close_status = self.send_code("con", "term")
+                else:
+                    close_status = self.send_code("con", "fail")
 
-        return error
+        return con_status, file_status, close_status, con_err, file_err, close_err
 
     def open_edf_file(self, host_file):
         """
@@ -166,15 +160,15 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        err = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
-        if not err:
+        error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
+        if not error:
             self.eyelink.sendCommand(f"add_file_preamble_text {self.tracker_config['preamble_text']}")
             self.delay()
-            self.send_code("edf", "ok")
+            status = self.send_code("edf", "ok")
         else:
-            error = self.send_code("edf", "fail")
+            status = self.send_code("edf", "fail")
 
-        return error
+        return status, error
 
     def get_lag(self):
         return self.eyelink.trackerTimeUsecOffset
@@ -236,9 +230,8 @@ class MyeLink:
         self.delay()
         self.send_code("reset", "ok")
 
-    def go_offline(self, wait=500):
+    def go_offline(self, wait=300):
 
-        error = None
         if self.eyelink.isRecording():
             self.delay()
             self.eyelink.stopRecording()
@@ -248,11 +241,11 @@ class MyeLink:
         self.eyelink.setOfflineMode()
         err = self.eyelink.waitForModeChange(wait)
         if not err:
-            self.send_code("idle", "ok")
+            status = self.send_code("idle", "ok")
         else:
-            error = self.send_code("idle", "fail")
+            status = self.send_code("idle", "fail")
 
-        return error
+        return status, err
 
     def calibrate(self):
         """
@@ -261,17 +254,17 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        error = None
+        err = None
         try:
             # Start the calibration
             self.eyelink.doTrackerSetup()
-            self.send_code("calib", "ok")
+            status = self.send_code("calib", "ok")
         except RuntimeError as e:
             self.eyelink.exitCalibration()
-            error = self.send_code("calib", "fail")
-            print("Error: ", e)
+            status = self.send_code("calib", "fail")
+            err = e
 
-        return error
+        return status, err
 
     def routine_checks(self):
         """
@@ -283,10 +276,8 @@ class MyeLink:
         error = None
         if not self.eyelink.isConnected():
             error = self.send_code("con", "lost")
-
         if self.eyelink.breakPressed():
             error = self.send_code("con", "term")
-
         return error
 
     def drift_correct(self, fix_pos=None):
@@ -308,19 +299,23 @@ class MyeLink:
         while True:
 
             # Check
-            error = self.routine_checks()
-            if error is not None:
-                return error
+            if not self.eyelink.isConnected():
+                status = self.send_code("con", "lost")
+                break
+            if self.eyelink.breakPressed():
+                status = self.send_code("drift", "term")
+                break
 
             # Perform drift correction
             err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
             # break if successful
             if err != pylink.ESC_KEY:
+                status = self.send_code("drift", "ok")
                 break
             else:
-                error = self.send_code("calib", "redo")
+                status = self.send_code("drift", "term")
 
-        return error
+        return status
 
     def come_online(self):
         """
@@ -333,11 +328,11 @@ class MyeLink:
         err = self.eyelink.startRecording(1, 1, 1, 1)
         if not err:
             self.delay()
-            self.send_code("rec", "ok")
+            status = self.send_code("rec", "init")
         else:
-            error = self.send_code("rec", "fail")
+            status = self.send_code("rec", "fail")
 
-        return error
+        return status, err
 
     def check_sample_rate(self):
         """
@@ -351,7 +346,7 @@ class MyeLink:
         intended_rate = self.tracker_config["sample_rate"]
 
         if tracker_rate == intended_rate:
-            self.send_code("config", "valid")
+            self.send_code("config", "good")
         else:
             error = self.send_code("config", "bad")
 
@@ -379,12 +374,12 @@ class MyeLink:
             (available == 2 and intended == "BINOCULAR")
         ):
             self.tracked_eye = intended
-            self.send_code("config", "valid")
+            status = self.send_code("config", "good")
         else:
             self.tracked_eye = None
-            error = self.send_code("config", "bad")
+            status = self.send_code("config", "bad")
 
-        return error
+        return status
 
     def get_correct_eye_data(self, sample):
         """
@@ -405,7 +400,7 @@ class MyeLink:
 
         return data
 
-    def process_event_online(self, events_of_interest: dict = None):
+    def process_events_online(self, events_of_interest: dict = None):
         """
         Find an event in the Eyelink tracker
 
@@ -429,11 +424,15 @@ class MyeLink:
 
         # Go through the samples and events in the buffer
         while True:
+            # Check
+            if not self.eyelink.isConnected():
+                info = self.send_code("con", "lost")
+                break
+            if self.eyelink.breakPressed():
+                info = self.send_code("con", "term")
+                break
 
-            error = self.routine_checks()
-            if error is not None:
-                return error
-
+            # Get the event type
             item_type = self.eyelink.getNextData()
             if not item_type:
                 break
@@ -453,7 +452,7 @@ class MyeLink:
                         func = self.process_fixation_end_event
                     elif event_name == "saccade_end":
                         func = self.process_saccade_end_event
-
+                    # Process the event data
                     info[event_name].append(func(data))
 
         return info
@@ -469,11 +468,9 @@ class MyeLink:
         prev_sample = None
 
         while True:
-
             error = self.routine_checks()
             if error is not None:
                 return error
-
             buffer_item = self.eyelink.getNextData()
             if not buffer_item:
                 break
@@ -481,7 +478,6 @@ class MyeLink:
             if buffer_item is not None:
                 if buffer_item.getType() == pylink.SAMPLE_TYPE:
                     if prev_sample is None or buffer_item.getTime() != prev_sample.getTime():
-
                         prev_sample = buffer_item
                         info = self.process_sample(buffer_item)
 
@@ -588,7 +584,7 @@ class MyeLink:
         ppd_x, ppd_y = data.getEndPPD()
 
         return {
-            "time": time,
+            "time_end": time,
             "gaze_end_x": gaze_x,
             "gaze_end_y": gaze_y,
             "ppd_end_x": ppd_x,
@@ -617,8 +613,6 @@ class MyeLink:
         ppd_end_x, ppd_end_y = event_data.getEndPPD()
         ppd_avg_x, ppd_avg_y = (ppd_start_x + ppd_end_x) / 2, (ppd_start_y + ppd_end_y) / 2
 
-        dva_avg_x, dva_avg_y = gaze_avg_x / ppd_avg_x, gaze_avg_y / ppd_avg_y
-
         pupil_start = event_data.getStartPupilSize()
         pupil_end = event_data.getEndPupilSize()
         pupil_avg = event_data.getAveragePupilSize()
@@ -639,8 +633,6 @@ class MyeLink:
             "ppd_end_y": ppd_end_y,
             "ppd_avg_x": ppd_avg_x,
             "ppd_avg_y": ppd_avg_y,
-            "dva_avg_x": dva_avg_x,
-            "dva_avg_y": dva_avg_y,
             "pupil_start": pupil_start,
             "pupil_end": pupil_end,
             "pupil_avg": pupil_avg
@@ -665,9 +657,7 @@ class MyeLink:
 
         ppd_start_x, ppd_start_y = event_data.getStartPPD()
         ppd_end_x, ppd_end_y = event_data.getEndPPD()
-        ppd_avg_x, ppd_avg_y = (ppd_start_x + ppd_end_x) / 2, (ppd_start_y + ppd_end_y) / 2.0
 
-        dva_avg_x, dva_avg_y = (gaze_end_x - gaze_start_x) / ppd_avg_x, (gaze_end_y - gaze_start_y) / ppd_avg_y
         amp_x, amp_y = event_data.getAmplitude()
         angle = event_data.getAngle()
 
@@ -688,10 +678,6 @@ class MyeLink:
             "ppd_start_y": ppd_start_y,
             "ppd_end_x": ppd_end_x,
             "ppd_end_y": ppd_end_y,
-            "ppd_avg_x": ppd_avg_x,
-            "ppd_avg_y": ppd_avg_y,
-            "dva_avg_x": dva_avg_x,
-            "dva_avg_y": dva_avg_y,
             "amp_x": amp_x,
             "amp_y": amp_y,
             "angle": angle,
@@ -729,7 +715,7 @@ class MyeLink:
         prev_sample = None
 
         while not trigger:
-            
+
             if not self.eyelink.isConnected():
                 return "Disconnected from the tracker."
 

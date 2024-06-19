@@ -29,7 +29,7 @@ from psychopy import core, monitors, visual, event, info, gui
 from psychopy.iohub.devices import Computer
 
 import logging
-from daedalus import log_handler, utils
+from daedalus import log_handler, utils, codes
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -92,20 +92,25 @@ class PsychoPhysicsExperiment:
         self.behav_data_file = None
 
         # Data
+        self.db = None
         self.stim_data = None
         self.frames_data = None
         self.behav_data = None
 
-        # Subject and session info
+        # Subject, session, and task
         self.subj_id = None
         self.ses_id = None
-        self.tasks = None
+        self.task = None
 
-        # Handlers
+        # Log
         self.logger = None
-        self.db = None
+        self.codex = codes.Codex()
+
+        # Visuals
         self.monitor = None
         self.window = None
+
+        # Clocks
         self.global_clock = None
         self.block_clock = None
         self.trial_clock = None
@@ -117,17 +122,16 @@ class PsychoPhysicsExperiment:
         self.init_configs()
 
         # Ask for subject information
-        subj, experimenter = self.hello_gui()
+        subj = self.hello_gui()
         if subj == "Load":
-            subj_df = self.subject_registration_gui()
-        else:
             subj_df = self.subject_loadation_gui()
+        else:
+            subj_df = self.subject_registration_gui()
 
         # Set the subject and session info
         self.subj_id = self._fix_id(subj_df["PID"].values[0])
         self.ses_id = self._fix_id(self.session_selection_gui())
         self.tasks = self._get_session_tasks()
-        subj_df["Experimenter"] = experimenter
 
         # Setup the directories and files
         self.init_dirs()
@@ -145,8 +149,6 @@ class PsychoPhysicsExperiment:
         # Start session clock
         self.global_clock = core.Clock()
 
-        return subj_df
-
     def prepare_block(self, task_name, block_id, n_blocks):
         """
         Prepare the block for the task.
@@ -157,16 +159,19 @@ class PsychoPhysicsExperiment:
         """
         self.init_block_data(task_name, block_id)
         self.block_clock = core.Clock()
+        self._info(self.codex.message("block", "init"))
+        self._info(f"BLOCKID_{block_id}")
 
         # Show block info as text
         txt = f"You are about to begin block {block_id}/{n_blocks}.\n\n"
         txt += "Press Space to start."
         resp = self.show_msg(txt)
-        if resp in ["escape", "ctrl+c"]:
-            self.logger.critical("User quit the experiment.")
+
+        if resp == "space":
+            msg = self.codex.message("exp", "ok")
+            self._info(msg)
+        elif resp in ["escape", "ctrl+c"]:
             self.goodbye("User quit.")
-        elif resp == "space":
-            self.logger.info(f"Starting block {block_id}.")
 
     def prepare_trial(self, trial_id):
         """
@@ -176,6 +181,90 @@ class PsychoPhysicsExperiment:
             trial_num (int): Trial number.
         """
         self.trial_clock = core.MonotonicClock()
+        self._info(self.codex.message("trial", "init"))
+        self._info(f"TRIALID_{trial_id}")
+
+        # Window
+        self.window.recordFrameIntervals = False
+        self.window.frameIntervals = []
+
+    def wrap_trial(self):
+        """
+        Wrap up the trial.
+        """
+        self._info(self.codex.message("trial", "fin"))
+        self.window.recordFrameIntervals = False
+        self.window.frameIntervals = []
+        self.clear_screen()
+
+    def wrap_block(self, block_id, block_name):
+        """
+        Wrap up the block.
+        """
+        # Log the end of the block
+        self._info(self.codex.message("block", "fin"))
+
+        # Save the data
+        self.save_stim_data()
+        self.save_behav_data()
+        self.save_frame_data()
+        self.save_block_to_participants(block_id, block_name)
+
+        # Show the end of the block message
+        self.show_msg(f"You finished block {block_id}!", wait_time=5)
+        self.clear_screen()
+
+    def wrap_session(self):
+        """
+        Wrap up the session.
+        """
+        self._info(self.codex.message("ses", "fin"))
+        self.show_msg(f"You finished session {self.ses_id} of the experiment!", wait_time=5)
+        self.clear_screen()
+
+        # Save and quit
+        self.save_session_to_participants()
+        self.goodbye()
+
+    def save_stim_data(self):
+        """
+        Save the stimulus data.
+        """
+        self.stim_data.to_csv(self.stim_data_file, sep=",", index=False)
+
+    def save_behav_data(self):
+        """
+        Save the behavioral data.
+        """
+        self.behav_data.to_csv(self.behav_data_file, sep=",", index=False)
+
+    def save_frame_data(self):
+        """
+        Save the frame data.
+        """
+        self.frames_data.to_csv(self.frames_data_file, sep=",", index=False)
+
+    def save_block_to_participants(self, block_id, block_name):
+        """
+        Save the block data.
+        """
+        pdf = self.load_participants_file()
+        pdf.loc[(pdf["PID"] == self.subj_id), f"Block{block_id}_{block_name}"] = self.block_clock.getTime()
+        pdf.to_csv(self.participants_file, sep="\t", index=False)
+
+    def save_session_to_participants(self):
+        """
+        Save the participants data.
+        """
+        pdf = self.load_participants_file()
+        pdf.loc[(pdf["PID"] == self.subj_id), f"Session{self.ses_id}"] = self.today()
+        pdf.to_csv(self.participants_file, sep="\t", index=False)
+
+    def save_log_data(self):
+        """
+        Save the log data.
+        """
+        self.logger.handlers[0].close()
 
     def init_configs(self):
         """
@@ -296,6 +385,42 @@ class PsychoPhysicsExperiment:
         self.logger.info("Let's get started!")
         self.logger.info("-" * 80)
 
+    def _info(self, msg):
+        """
+        Log an info message and add the name of the function that called it.
+
+        Args:
+            msg (str): The message to be logged.
+        """
+        self.logger.info(f"[@{utils.get_caller()}] {msg}")
+
+    def _warn(self, msg):
+        """
+        Log a warning message and add the name of the function that called it.
+
+        Args:
+            msg (str): The message to be logged.
+        """
+        self.logger.warning(f"[@{utils.get_caller()}] {msg}")
+
+    def _error(self, msg):
+        """
+        Log an error message and add the name of the function that called it.
+
+        Args:
+            msg (str): The message to be logged.
+        """
+        self.logger.error(f"[@{utils.get_caller()}] {msg}")
+
+    def _critical(self, msg):
+        """
+        Log a critical message and add the name of the function that called it.
+
+        Args:
+            msg (str): The message to be logged.
+        """
+        self.logger.critical(f"[@{utils.get_caller()}] {msg}")
+
     def _fix_id(self, id_):
         """
         Fix the ID of the subject or session to be a string with two digits.
@@ -369,7 +494,7 @@ class PsychoPhysicsExperiment:
         df = pd.DataFrame(columns=columns)
         df.to_csv(file_name, sep=",", index=False)
 
-    def init_block_data(self, task_name, block_id):
+    def init_block_data(self, block_id):
         """
         Add directories and files for a block in a task.
 
@@ -380,7 +505,7 @@ class PsychoPhysicsExperiment:
             block_name (str): Block name
             block_id (int or str): Block ID
         """
-        stim_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_stimuli.csv"
+        stim_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task.name}_block-{block_id}_stimuli.csv"
         if stim_file.exists():
             self.logger.critical(f"File {stim_file} already exists. Making a backup and removing the file.")
             stim_file.rename(stim_file.with_suffix(".bak"))
@@ -388,7 +513,7 @@ class PsychoPhysicsExperiment:
         self.stim_data_file = stim_file
         self.stim_data = pd.read_csv(stim_file, sep=",", index_col=False)
 
-        frames_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_FrameIntervals.csv"
+        frames_file = self.ses_data_dir / "exp" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task.name}_block-{block_id}_FrameIntervals.csv"
         if frames_file.exists():
             self.logger.critical(f"File {frames_file} already exists. Making a backup and removing the file.")
             frames_file.rename(frames_file.with_suffix(".bak"))
@@ -396,7 +521,7 @@ class PsychoPhysicsExperiment:
         self.frames_data_file = frames_file
         self.frames_data = pd.read_csv(frames_file, sep=",", index_col=False)
 
-        behav_file = self.ses_data_dir / "behav" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{task_name}_block-{block_id}_behavioral.csv"
+        behav_file = self.ses_data_dir / "behav" / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task.name}_block-{block_id}_behavioral.csv"
         if behav_file.exists():
             self.logger.critical(f"File {behav_file} already exists. Making a backup and removing the file.")
             behav_file.rename(behav_file.with_suffix(".bak"))
@@ -415,24 +540,32 @@ class PsychoPhysicsExperiment:
 
                 win : psychopy.visual.Window
         """
-        # Make the monitor object and set width, distance, and resolution
-        monitor = monitors.Monitor(
-            name=self.platform_settings["Monitor"],
-            width=self.monitor_params["size_cm"][0],
-            distance=self.monitor_params["distance"],
-            autoLog=False
-        )
-        monitor.setSizePix(self.monitor_params["size_px"])
+        name = self.settings["Platforms"][self.platform]["Monitor"]
+        available = monitors.getAllMonitors()
+        if name in available:
+            monitor = monitors.Monitor(name=name)
+        else:
+            # Make the monitor object and set width, distance, and resolution
+            monitor = monitors.Monitor(
+                name=name,
+                width=self.monitor_params["size_cm"][0],
+                distance=self.monitor_params["distance"],
+                autoLog=False
+            )
+            monitor.setSizePix(self.monitor_params["size_pix"])
 
-        # Gamma correction
-        gamma_file = self.directories["config"] / f"{self.monitor_params}_gamma_grid.npy"
-        try:
-            grid = np.load(str(gamma_file))
-            monitor.setLineariseMethod(1)  # (a + b**xx)**gamma
-            monitor.setGammaGrid(grid)
-        except FileNotFoundError:
-            self.logger.warning("No gamma grid file found. Running without gamma correction.")
-            monitor.setGamma(None)
+            # Gamma correction
+            gamma_file = self.directories["config"] / f"{self.monitor_params}_gamma_grid.npy"
+            try:
+                grid = np.load(str(gamma_file))
+                monitor.setLineariseMethod(1)  # (a + b**xx)**gamma
+                monitor.setGammaGrid(grid)
+            except FileNotFoundError:
+                self.logger.warning("No gamma grid file found. Running without gamma correction.")
+                monitor.setGamma(None)
+
+            # Save for future use
+            monitor.save()
 
         # Set variables for the window object based on Debug status of the experiment
         if self.debug:
@@ -541,8 +674,7 @@ class PsychoPhysicsExperiment:
             info_dict = {"PID": dlg.data[0]}
             for i, field in enumerate(required_info.keys()):
                 info_dict[field] = dlg.data[i + 1]
-            info_df = pd.DataFrame([info_dict])
-            return info_df
+                return info_dict
         else:
             raise ValueError("Subject registration cancelled.")
 
@@ -614,14 +746,24 @@ class PsychoPhysicsExperiment:
 
         # Find the sessions that are available
         sessions = [ses["id"] for ses in self.exp_params["Sessions"]]
-        burnt_sessions = subj_info.columns[subj_info.columns.str.contains("Session")].values
+        burnt_sessions = []
+        for col in subj_info.columns:
+            if "Session" in col:
+                val = subj_info[col].values[0]
+                if not pd.isnull(val):
+                    burnt_sessions.append(val)
         available_sessions = [sid for sid in sessions if sid not in burnt_sessions]
         dlg.addField("Session", choices=available_sessions)
+
+        # Add experimenter
+        dlg.addField("Experimenter", choices=[a["name"] for a in self.settings["Study"]["Authors"]])
 
         # Show the dialog
         dlg.show()
         if dlg.OK:
-            return dlg.data[-1]
+            ses = dlg.data[0]
+            experimenter = dlg.data[1]
+            return ses, experimenter
         else:
             raise ValueError("Session selection cancelled.")
 
@@ -654,30 +796,51 @@ class PsychoPhysicsExperiment:
         """
         Initializes the participants file.
         """
-        columns = list(self.exp_params["SubjectInfo"].keys())
-        columns += [f"{task}Task" for task in self.exp_params["Tasks"].keys()]
+        columns = ["PID"]
+
+        # Info
+        columns += list(self.exp_params["SubjectInfo"].keys())
+
+        # Sessions
+        columns += [f"Session{ses['id']}" for ses in self.exp_params["Sessions"]]
+
+        # Tasks and blocks
+        b = 1
+        for task, vals in self.exp_params["Tasks"].items():
+            blocks = vals["blocks"]
+            for block in blocks:
+                name = block["name"]
+                columns += [f"Block{b}_{name}"]
+                b += 1
+
+        # Other columns
         columns += ["Experimenter", "ExperimentName", "Version"]
+
+        # Make the dataframe
         df = pd.DataFrame(columns=columns)
+
+        # Save
         df.to_csv(self.participants_file, sep="\t", index=False)
 
-    def save_subject_info(self, subject_info):
+    def save_new_subject_info(self, subject_info):
         """
         Saves the subject info to the participants file.
 
         Args:
             subject_info (dict or DataFrame): The subject info as a dictionary.
         """
-        df = pd.read_csv(self.participants_file, sep="\t")
+        df = self.load_participants_file()
         if isinstance(subject_info, dict):
-            sub_df = pd.DataFrame([subject_info], columns=subject_info.keys())
+            sub_df = pd.DataFrame.from_dict(subject_info, orient="columns")
+        else:
+            sub_df = subject_info
 
         existing_pids = df["PID"].values
-        if self.subj_id in existing_pids:
-            # replace the existing row
-            df.loc[df["PID"] == self.subj_id, :] = sub_df
-        else:
+        if self.subj_id not in existing_pids:
             # append the new row
             out_df = pd.concat([df, sub_df], ignore_index=True)
+        else:
+            raise ValueError(f"PID {self.subj_id} already exists in the participants file.")
 
         # Save the file
         out_df.to_csv(self.participants_file, sep="\t", index=False)
@@ -828,47 +991,35 @@ class PsychoPhysicsExperiment:
         """
         Closes and ends the experiment.
         """
-        self.logger.info("Bye bye experiment.")
-        # Save the log file
-        self.logger.handlers[0].close()
+        # Close the window
         self.window.close()
+
+        # Quit
         if raise_error is not None:
-            raise SystemExit(f"Experiment ended with error: {raise_error}.")
+        # Save as much as you can
+            self._critical(self.codex.message("exp", "term"))
+            self.save_stim_data()
+            self.save_behav_data()
+            self.save_frame_data()
+            self.save_log_data()
+            raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
+            # Log
+            self._info("Bye Bye Experiment.")
+            self.save_log_data()
             core.quit()
 
-    def enable_force_quit(self, key_press: str = 'escape'):
+    def enable_force_quit(self):
         """
-        Quits the experiment during runtime if a key (default 'space') is pressed.
-
-        Args:
-            key_press (str): The key to press to quit the experiment.
+        Quits the experiment during runtime if Ctrl+C is pressed.
         """
         # Get the keypress from user
-        pressed = event.getKeys()
-
+        pressed = event.getKeys(modifiers=True)
         # Check if it's the quit key
-        if key_press in pressed:
-            self.logger.critical("Force quitting...")
-            self.goodbye("User force quit.")
-
-    def check_frame_durations(self, frame_intervals: Union[list, np.array]):
-        """
-        Checks the duration of all the provided frame intervals and measures the number of dropped frames.
-
-        Args:
-            frame_intervals (list, np.array): List of frame intervals
-
-        Returns:
-            int: Number of dropped frames
-        """
-        # Get the stats of the frames
-        z_intervals = stats.zscore(frame_intervals)
-
-        # Count anything greater than 3 standard deviations as dropped frames
-        n_dropped = len(np.where(z_intervals > 3)[0])
-
-        return n_dropped
+        if pressed:
+            for key, mods in pressed:
+                if key == "c" and mods["ctrl"]:
+                    self.goodbye("User quit.")
 
     def ms2fr(self, duration: float):
         """Converts durations from ms to display frames"""
@@ -877,6 +1028,27 @@ class PsychoPhysicsExperiment:
     def fr2ms(self, frames: int):
         """Converts durations from display frames to ms"""
         return np.ceil(frames * 1000 / self.monitor_params["refresh_rate"]).astype(int)
+
+    def time_point_to_frame_idx(self, time, frame_times):
+        """
+        Find the frame number for a given time.
+        """
+        sum_frames = np.cumsum(frame_times)
+        return np.argmax(sum_frames > time)
+
+    @staticmethod
+    def period_edge_frames(frames, period):
+        modified = np.where(frames == period, 100, 0)
+        start = np.argmax(modified, axis=1)
+        end = np.argmax(modified[::-1], axis=1)
+
+        return start, end
+
+    def val_round(self, val):
+        return np.round(val, self.exp_params["General"]["round_decimal"])
+
+    def ms_round(self, times):
+        return np.round(times * 1000, self.exp_params["General"]["round_decimal"])
 
 
 class PsychoPhysicsDatabase:

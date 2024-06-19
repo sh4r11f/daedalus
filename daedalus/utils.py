@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==================================================================================================== #
-#                                                                                                                                                                                                      #
+#
 #                                                                                                                                                                                                      #
 #                    SCRIPT: utils.py                                                                                                                                                                 #
 #                                                                                                                                                                                                      #
@@ -17,6 +17,7 @@
 #                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
 #                                                                                                                                                                                                      #
 # ==================================================================================================== #
+import inspect
 import yaml
 import json
 from pathlib import Path
@@ -96,3 +97,13 @@ def get_hypot(orig_x, orig_y, end_x, end_y):
     ydiff = np.fabs(orig_y - end_y)
 
     return np.hypot(xdiff, ydiff)
+
+
+def get_caller():
+    """
+    Get the name of the function that called the current function.
+
+    Returns:
+        str: The name of the calling function.
+    """
+    return inspect.currentframe().f_back.f_code.co_name

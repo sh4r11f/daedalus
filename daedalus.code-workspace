@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../../tools/psychopy/psychopy"
+		},
+		{
+			"path": "../../tools/psychopy-visionscience/psychopy_visionscience"
 		}
 	],
 	"settings": {}

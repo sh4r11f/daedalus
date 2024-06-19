@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ======================================================================================== #
 #
@@ -22,64 +21,98 @@ class Codex:
 
     def __init__(self):
 
-        self.events = {
+        self.proc_codes = {
             "con": 0,
             "config": 10,
             "calib": 20,
             "rec": 30,
-            "dl": 40,
-            "edf": 50,
-            "end": 60,
+            "file": 40,
+
+
             "reset": 70,
             "idle": 80,
+            "drift": 90,
 
-            "fix": 100
+            "exp": 100,
+            "ses": 110,
+            "block": 120,
+            "trial": 130,
+            "fix": 140,
+            "stim": 150,
+            "resp": 160,
+            "fb": 170,
+
+            "sys": 1000,
         }
-        self.states = {
+        self.state_codes = {
             "init": 0,
             "ok": 1,
             "fail": 2,
             "lost": 3,
             "stop": 4,
-            "redo": 5,
+            "fin": 5,
             "term": 6,
-            "valid": 7,
+            "good": 7,
             "bad": 8,
+            "timeout": 9
         }
-        self.names = {
+        self.proc_names = {
             "con": "CONNECTION",
             "config": "CONFIGURATION",
             "calib": "CALIBRATION",
             "rec": "RECORDING",
-            "dl": "DOWNLOAD",
-            "edf": "EDF",
-            "end": "END",
+            "file": "FILE",
             "reset": "RESET",
             "idle": "IDLE",
+            "drift": "DriftCorrection",
 
+            "exp": "EXPERIMENT",
+            "ses": "SESSION",
+            "block": "BLOCK",
+            "trial": "TRIAL",
             "fix": "FIXATION",
+            "stim": "STIMULUS",
+            "resp": "RESPONSE",
+            "fb": "FEEDBACK",
 
-            "init": "INIT",
-            "ok": "OK",
-            "fail": "FAIL",
+            "sys": "SYSTEM"
+        }
+        self.state_names = {
+            "init": "START",
+            "ok": "SUCCESS",
+            "fail": "FAILED",
             "lost": "LOST",
             "stop": "STOP",
-            "redo": "REDO",
+            "fin": "FINISHED",
             "term": "TERMINATED",
-            "valid": "VALID",
-            "bad": "INVALID"
+            "good": "VALID",
+            "bad": "INVALID",
+            "timeout": "TIMEOUT"
         }
 
-    def code(self, event, state):
-        if event not in self.events.keys():
-            raise ValueError(f"Event {event} not found in the codex")
-        if state not in self.states.keys():
-            raise ValueError(f"State {state} not found in the codex")
-        return self.events[event] + self.states[state]
+    def code(self, proc, state):
 
-    def message(self, event, state):
-        if event not in self.events.keys():
-            raise ValueError(f"Event {event} not found in the codex")
-        if state not in self.states.keys():
+        if proc not in self.proc_codes.keys():
+            raise ValueError(f"Process {proc} not found in the codex")
+        if state not in self.state_codes.keys():
             raise ValueError(f"State {state} not found in the codex")
-        return f"{event.upper()}_{state.upper()}"
+
+        return self.proc_codes[proc] + self.state_codes[state]
+
+    def message(self, proc, state):
+
+        if proc not in self.proc_names.keys():
+            raise ValueError(f"Process {proc} not found in the codex")
+        if state not in self.state_names.keys():
+            raise ValueError(f"State {state} not found in the codex")
+
+        return f"{self.proc_names[proc]}_{self.state_names[state]}"
+
+    def code2msg(self, code):
+
+        code_proc = code // 10
+        code_state = code % 10
+        proc = [k for k, v in self.proc_codes.items() if v == code_proc][0]
+        state = [k for k, v in self.state_codes.items() if v == code_state][0]
+
+        return self.message(proc, state)
