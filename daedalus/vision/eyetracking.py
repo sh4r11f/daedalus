@@ -104,10 +104,11 @@ class Eyetracking(PsychoPhysicsExperiment):
             self._error(self.codex.message("file", "fail"))
             self.goodbye(error)
 
-    def prepare_block(self, calib=False):
+    def prepare_block(self, block_id, calib=False):
         """
         """
         # Start the clock and log
+        self.block_id = block_id
         self.block_clock.reset()
         self.log_info(self.codex.message("block", "init"))
         self.log_info(f"BLOCKID_{self.block_id}")
@@ -118,7 +119,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         # Show block info as text
         n_blocks = len(self.get_reamining_blocks())
         txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
-        txt += "Press Space to resume or Enter to recalibrate the eye tracker."
+        txt += "Press Space to resume or Enter to (re)calibrate the eye tracker."
         resp = self.show_msg(txt)
         if resp == "space":
             if calib:
@@ -134,7 +135,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         elif resp == "enter":
             self.run_calibration()
 
-    def prepare_trial(self, fixation):
+    def prepare_trial(self, trial_id, fixation):
         """
         """
         super().prepare_trial()
@@ -416,42 +417,64 @@ class Eyetracking(PsychoPhysicsExperiment):
         # Message
         msg = "In the next screen, press `c` to calibrate the eyetracker.\n\n"
         msg += "Once the calibration is done, press `Enter` to accept the calibration and resume the experiment.\n\n"
-        msg += "Press Space to continue..."
+        msg += "Press `Space` to continue..."
         resp = self.show_msg(msg)
 
-        if resp == "space":
+        if resp == "escape":
+            code = self.tracker.send_code("calib", "term")
+            self.log_warning(self.codex.code2msg(code))
+            return code
+        elif resp == "space":
             self.log_info(self.codex.message("calib", "init"))
-            calibrated = False
             attempt = 1
+            calibrated = False
             while not calibrated:
-                if attempt > self.exp_params["General"]["calibration_max_attempts"]:
-                    self.goodbye(self.codex.message("calib", "fail"))
+                if attempt > int(self.exp_params["General"]["calibration_max_attempts"]):
+                    code = self.tracker.send_code("calib", "timeout")
+                    self.log_error(self.codex.code2msg(code))
+                    calibrated = False
+                    break
 
                 if attempt > 1:
                     msg = f"Attempt {attempt} for calibration."
+                    msg += "Press `Space` to continue or `Escape` to skip."
                     resp = self.show_msg(msg)
-                    if resp == "space":
-                        self.log_info(msg)
+                    if resp == "escape":
+                        code = self.tracker.send_code("calib", "term")
+                        self.log_warning(self.codex.code2msg(code))
+                        calibrated = False
+                        break
 
                 # Take the tracker offline
                 off_res, off_err = self.tracker.go_offline()
-                msg = self.codex.code2msg(off_res)
+                off_msg = self.codex.code2msg(off_res)
                 if off_res == self.codex.code("idle", "ok"):
-                    self.log_info(msg)
-                else:
-                    self.log_error(msg)
-                    attempt += 1
-                    continue
+                    self.log_info(off_msg)
 
-                # Start calibration
-                calib_res, calib_err = self.tracker.calibrate()
-                msg = self.codex.code2msg(calib_res)
-                if calib_res == self.codex.code("calib", "ok"):
-                    self.log_info(msg)
+                    # Start calibration
+                    self.log_info(f"Attempt: {attempt}")
+                    calib_res, calib_err = self.tracker.calibrate()
+                    calib_msg = self.codex.code2msg(calib_res)
+                    if calib_res == self.codex.code("calib", "ok"):
+                        self.log_info(calib_msg)
+                        self.msg_stim.text = "Calibration is done. Press `Enter` to accept the calibration and resume the experiment."
+                        calibrated = True
+                        while self.tracker.eyelink.inSetup():
+                            self.msg_stim.draw()
+                            self.window.flip()
+                            keys = self.event.getKeys()
+                            if "enter" in keys:
+                                break
+                    else:
+                        self.log_warning(calib_msg)
+                        self.log_error(calib_err)
+                        attempt += 1
                 else:
-                    self.log_error(msg)
+                    self.log_err(off_msg)
+                    self.log_error(off_err)
                     attempt += 1
-                    continue
+
+        return calibrated
 
     def monitor_fixation(self, fix_pos=(0, 0), method="circle"):
         """
