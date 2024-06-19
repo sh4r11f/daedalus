@@ -307,13 +307,16 @@ class MyeLink:
                 break
 
             # Perform drift correction
-            err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
-            # break if successful
-            if err != pylink.ESC_KEY:
-                status = self.send_code("drift", "ok")
-                break
-            else:
-                status = self.send_code("drift", "term")
+            try:
+                err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
+                # break if successful
+                if err != pylink.ESC_KEY:
+                    status = self.send_code("drift", "ok")
+                    break
+                else:
+                    status = self.send_code("drift", "term")
+            except:
+                status = self.send_code("drift", "fail")
 
         return status
 
