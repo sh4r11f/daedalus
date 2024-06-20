@@ -30,6 +30,8 @@ class Codex:
             "reset": 6,
             "idle": 7,
             "drift": 8,
+            "rate": 9,
+            "eye": 30,
 
             "exp": 10,
             "ses": 11,
@@ -55,6 +57,7 @@ class Codex:
             "timeout": 0.9,
             "rep": 0.01,
             "maxout": 0.02,
+            "done": 0.03,
         }
         self.proc_names = {
             "con": "CONNECTION",
@@ -77,7 +80,7 @@ class Codex:
         }
         self.state_names = {
             "init": "START",
-            "ok": "SUCCESS",
+            "ok": "OK",
             "fail": "FAILED",
             "lost": "LOST",
             "stop": "STOP",
@@ -88,6 +91,7 @@ class Codex:
             "timeout": "TIMEOUT",
             "rep": "REPEAT",
             "maxout": "MAXED_OUT",
+            "done": "DONE"
         }
 
     def code(self, proc, state):
