@@ -53,7 +53,7 @@ class MyeLink:
         # Setup
         self.exp_name = exp_name
         self.tracker_name = tracker_name
-        self.tracker_config = tracker_config
+        self.params = tracker_config
         self.dummy = dummy
 
         self.eyelink = None
@@ -78,7 +78,7 @@ class MyeLink:
             delay_time (_type_, optional): _description_. Defaults to None.
         """
         if delay_time is None:
-            delay_time = self.tracker_config["delay_time"]
+            delay_time = self.params["delay_time"]
         self.eyelink.pumpDelay(delay_time)
 
     def connect(self):
@@ -91,7 +91,7 @@ class MyeLink:
         if self.dummy:
             self.eyelink = pylink.EyeLink(None)
         else:
-            self.eyelink = pylink.EyeLink(self.tracker_config["Connection"]["ip_address"])
+            self.eyelink = pylink.EyeLink(self.params["Connection"]["ip_address"])
 
     def terminate(self, host_file, display_file):
         """
@@ -162,7 +162,7 @@ class MyeLink:
         """
         error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
         if not error:
-            self.eyelink.sendCommand(f"add_file_preamble_text {self.tracker_config['preamble_text']}")
+            self.eyelink.sendCommand(f"add_file_preamble_text {self.params['preamble_text']}")
             self.delay()
             status = self.send_code("edf", "ok")
         else:
@@ -179,7 +179,7 @@ class MyeLink:
         e.g., sample rate and calibration type.
         """
         # Set the configuration from the config dictionary
-        for key, value in self.tracker_config["AutoConfig"].items():
+        for key, value in self.params["AutoConfig"].items():
             self.eyelink.sendCommand(f"{key} = {value}")
             self.delay()
 
@@ -193,8 +193,8 @@ class MyeLink:
             graph_env: External graphics environment to use for calibration
         """
         # Set window info
-        width = int(self.tracker_config["screen_width"])
-        height = int(self.tracker_config["screen_height"])
+        width = int(self.params["screen_width"])
+        height = int(self.params["screen_height"])
 
         self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
         self.delay()
@@ -203,7 +203,7 @@ class MyeLink:
         self.delay()
 
         if graph_env is None:
-            bits = int(self.tracker_config["screen_bits"])
+            bits = int(self.params["screen_bits"])
             self.eyelink.openGraphics((width, height), bits)
         else:
             self.eyelink.openGraphics(graph_env)
@@ -230,7 +230,7 @@ class MyeLink:
         self.delay()
         self.send_code("reset", "ok")
 
-    def go_offline(self, wait=300):
+    def go_offline(self):
 
         if self.eyelink.isRecording():
             self.delay()
@@ -239,13 +239,8 @@ class MyeLink:
             self.send_code("rec", "stop")
 
         self.eyelink.setOfflineMode()
-        err = self.eyelink.waitForModeChange(wait)
-        if not err:
-            status = self.send_code("idle", "ok")
-        else:
-            status = self.send_code("idle", "fail")
-
-        return status, err
+        self.eyelink.waitForModeReady(self.params["wait_time"])
+        self.send_code("idle", "ok")
 
     def calibrate(self):
         """
@@ -258,7 +253,12 @@ class MyeLink:
         try:
             # Start the calibration
             self.eyelink.doTrackerSetup()
-            status = self.send_code("calib", "ok")
+            res = self.eyelink.getCalibrationMessage()
+            if res == "OK_REPLY":
+                status = self.send_code("calib", "ok")
+            else:
+                status = self.send_code("calib", "fail")
+                err = res
         except RuntimeError as e:
             self.eyelink.exitCalibration()
             status = self.send_code("calib", "fail")
@@ -311,11 +311,15 @@ class MyeLink:
                 err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
                 # break if successful
                 if err != pylink.ESC_KEY:
-                    status = self.send_code("drift", "ok")
+                    if self.eyelink.getCalibrationMessage == "OK_REPLY":
+                        self.eyelink.applyDriftCorrect()
+                        status = self.send_code("calib", "ok")
+                    else:
+                        status = self.send_code("calib", "fail")
                     break
                 else:
                     status = self.send_code("drift", "term")
-            except:
+            except RuntimeError:
                 status = self.send_code("drift", "fail")
 
         return status
@@ -330,10 +334,22 @@ class MyeLink:
         # Record samples and events and save to file and send over link
         err = self.eyelink.startRecording(1, 1, 1, 1)
         if not err:
+            # Allocate some time for the link to go online
             self.delay()
+            # Begin realtime mode
+            self.eyelink.beginRealTimeMode(123)
+            # wait for link data to arrive
+            try:
+                self.eyelink.waitForBlockstart(123, 1, 1)
+            except RuntimeError as e:
+                
+                err = e
+            
             status = self.send_code("rec", "init")
         else:
             status = self.send_code("rec", "fail")
+
+        # Wait for 
 
         return status, err
 
@@ -346,7 +362,7 @@ class MyeLink:
         """
         tracker_rate = self.eyelink.getSampleRate()
         self.eyelink.sendMessage(f"SampleRate_{tracker_rate}")
-        intended_rate = self.tracker_config["sample_rate"]
+        intended_rate = self.params["sample_rate"]
 
         if tracker_rate == intended_rate:
             self.send_code("config", "good")
@@ -368,7 +384,7 @@ class MyeLink:
         # Get the eye information
         available = self.eyelink.eyeAvailable()
         self.eyelink.sendMessage(f"EYE_{available}")
-        intended = self.tracker_config["AutoConfig"]["active_eye"]
+        intended = self.params["AutoConfig"]["active_eye"]
 
         # Check
         if (

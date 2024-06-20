@@ -105,9 +105,10 @@ class PsychoPhysicsExperiment:
         self.block_id = None
         self.trial_id = None
 
-        # Task
+        # Task and analyzer
         self.task_name = None
         self.task = None
+        self.analyzer = None
 
         # Log
         self.logger = None
@@ -121,6 +122,9 @@ class PsychoPhysicsExperiment:
         self.global_clock = None
         self.block_clock = None
         self.trial_clock = None
+
+        # Stimuli
+        self.msg_stim = self.make_msg_stim()
 
     def init_session(self):
         """
@@ -165,37 +169,51 @@ class PsychoPhysicsExperiment:
         self.block_clock = core.Clock()
         self.trial_clock = core.MonotonicClock()
 
-    def prepare_block(self):
+        # First log
+        self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
+        self.logger.info(f"Looks like we're running a {self.exp_type} experiment called {self.name} (v{self.version}).")
+        self.logger.info(f"Today is {self.today}.")
+        self.logger.info("Let's get started!")
+        self.logger.info("-" * 80)
+
+    def prepare_block(self, block_id, repeat=False):
         """
         Prepare the block for the task.
+
+        Args:
+            block_id (int): Block number.
+            repeat (bool): Is the block a repeat?
         """
         # Start the clock and log
-        self.block_clock.reset()
-        self.log_info(self.codex.message("block", "init"))
-        self.log_info(f"BLOCKID_{self.block_id}")
-
-        # Initialize the block data
-        self.init_block_data()
+        self.block_id = self._fix_id(block_id)
 
         # Show the start of the block message
         n_blocks = len(self.get_reamining_blocks())
-        txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
+        if repeat:
+            txt = f"You are repeating block {self.block_id}/{n_blocks}.\n\n"
+        else:
+            txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
         txt += "Press Space to start."
-        resp = self.show_msg(txt)
+        while True:
+            resp = self.show_msg(txt)
+            if resp == "space":
+                # Reset the block clock
+                self.block_clock.reset()
+                # Initialize the block data
+                self.init_block_data()
+                # Log the start of the block
+                self.log_info(self.codex.message("block", "init"))
+                self.log_info(f"BLOCKID_{self.block_id}")
+                break
 
-        if resp == "space":
-            msg = self.codex.message("exp", "ok")
-            self.log_info(msg)
-        elif resp in ["escape", "ctrl+c"]:
-            self.goodbye(self.codex.message("exp", "term"))
-
-    def prepare_trial(self):
+    def prepare_trial(self, trial_id):
         """
         Prepare the trial for the block.
 
         Args:
             trial_num (int): Trial number.
         """
+        self.trial_id = self._fix_id(trial_id)
         self.trial_clock.reset()
         self.log_info(self.codex.message("trial", "init"))
         self.log_info(f"TRIALID_{self.trial_id}")
@@ -209,7 +227,7 @@ class PsychoPhysicsExperiment:
         self.window.frameIntervals = []
         self.clear_screen()
 
-    def wrap_block(self, block_name):
+    def wrap_block(self):
         """
         Wrap up the block.
         """
@@ -225,13 +243,20 @@ class PsychoPhysicsExperiment:
         self.show_msg(f"Great job! You finished block {self.block_id}.", wait_time=5)
         self.clear_screen()
 
+    def stop_block(self):
+        """
+        Stop the block.
+        """
+        self.log_warn(self.codex.message("block", "stop"))
+        msg = f"Repeating block {self.block_id} due to too many failed trials (n={self.exp_params['General']['trial_fail_limit']})."
+        self.show_msg(msg, wait_time=5, msg_type="warning")
+
     def end_session(self):
         """
         End the session.
         """
         self.log_info(self.codex.message("ses", "fin"))
         self.show_msg(f"Amazing! You finished session {self.ses_id} of the experiment", wait_time=5)
-        self.clear_screen()
 
         # Save and quit
         self.save_session_complete()
@@ -369,16 +394,6 @@ class PsychoPhysicsExperiment:
         if self.debug:
             log_handler.set_handlers_level(self.logger.StreamHandler, logging.DEBUG)
 
-        # First log
-        self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
-        self.logger.info("Here are some settings we're working with: ")
-        for key, value in self.settings["Study"].items():
-            self.logger.info(f"\t\t -{key}: {value}")
-        for key, value in self.platform_settings.items():
-            self.logger.info(f"\t\t -{key}: {value}")
-        self.logger.info("Let's get started!")
-        self.logger.info("-" * 80)
-
     def log_info(self, msg):
         """
         Log an info message and add the name of the function that called it.
@@ -513,6 +528,15 @@ class PsychoPhysicsExperiment:
         self.init_stim_data()
         self.init_behav_data()
         self.init_frames_data()
+
+    def load_session_data(self, data_type):
+        """
+        Load the session data.
+        """
+        files = self.ses_data_dir.glob(f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-*_{data_type}.csv")
+        data = pd.concat([pd.read_csv(file) for file in files], ignore_index=True)
+
+        return data
 
     def init_display(self) -> Tuple:
         """
@@ -825,7 +849,7 @@ class PsychoPhysicsExperiment:
 
         # Start testing
         self.logger.info("Running system checks.")
-        warnings = "<Press Space to continue or Escape to quit>\n\n"
+        warnings = "<Press Space to continue or Escape to quit.>\n\n"
 
         # Test the refresh rate of the monitor
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
@@ -888,15 +912,14 @@ class PsychoPhysicsExperiment:
         # Flip the window
         self.window.flip()
 
-    def show_msg(self, text, wait_keys=True, wait_time=0):
-        """ Show task instructions on screen"""
+    def make_msg_stim(self):
+        """Make a message stimulus"""
 
         # Make a message stimulus
         msg = visual.TextStim(
             self.window,
-            text,
             font="Trebuchet MS",
-            color="black",
+            color=self.exp_params["General"]["message_text_color"],
             alignText='center',
             anchorHoriz='center',
             anchorVert='center',
@@ -904,9 +927,57 @@ class PsychoPhysicsExperiment:
             autoLog=False
         )
 
+        return msg
+
+    def make_countdown_stim(self):
+        """Make a countdown stimulus"""
+
+        # Make a countdown stimulus
+        countdown = visual.TextStim(
+            self.window,
+            font="Trebuchet MS",
+            color="black",
+            alignText='center',
+            anchorHoriz='center',
+            anchorVert='center',
+            wrapWidth=self.window.size[0] / 2,
+            pos=(self.window.size[0] / 2, self.window.size[1] / 2),
+            autoLog=False
+        )
+
+        return countdown
+
+    def show_msg(self, text, wait_keys=True, wait_time=0, msg_type="info"):
+        """
+        Show task instructions on screen
+
+        Args:
+            text (str): The text to be displayed.
+            wait_keys (bool): Whether to wait for a key press.
+            wait_time (float): The time to wait before continuing.
+
+        Returns:
+            str: The key press that was made.
+        """
+        # Change background color
+        self.window.color = self.exp_params["General"]["message_background_color"]
+
+        # Set the text
+        self.msg_stim.text = text
+
+        # Change color based on info
+        if msg_type == "info":
+            self.msg_stim.color = "black"
+        elif msg_type == "warning":
+            self.msg_stim.color = "red"
+        elif msg_type == "error":
+            self.msg_stim.color = "red"
+        elif msg_type == "success":
+            self.msg_stim.color = "green"
+
         # Clear the screen and show the message
         self.clear_screen()
-        msg.draw()
+        self.msg_stim.draw()
         self.window.flip()
 
         # Wait indefinitely, terminates upon any key press or timeout
@@ -946,6 +1017,7 @@ class PsychoPhysicsExperiment:
         if key_press == "ctrl+c":
             self.goodbye("User quit.")
         else:
+            self.log_info(f"User pressed {key_press}.")
             self.clear_screen()
             return key_press
 

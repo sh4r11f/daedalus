@@ -22,39 +22,39 @@ class Codex:
     def __init__(self):
 
         self.proc_codes = {
-            "con": 0,
-            "config": 10,
-            "calib": 20,
-            "rec": 30,
-            "file": 40,
+            "con": 1,
+            "config": 2,
+            "calib": 3,
+            "rec": 4,
+            "file": 5,
+            "reset": 6,
+            "idle": 7,
+            "drift": 8,
 
+            "exp": 10,
+            "ses": 11,
+            "block": 12,
+            "trial": 13,
+            "fix": 14,
+            "stim": 15,
+            "resp": 16,
+            "fb": 17,
 
-            "reset": 70,
-            "idle": 80,
-            "drift": 90,
-
-            "exp": 100,
-            "ses": 110,
-            "block": 120,
-            "trial": 130,
-            "fix": 140,
-            "stim": 150,
-            "resp": 160,
-            "fb": 170,
-
-            "sys": 1000,
+            "sys": 20,
         }
         self.state_codes = {
-            "init": 0,
-            "ok": 1,
-            "fail": 2,
-            "lost": 3,
-            "stop": 4,
-            "fin": 5,
-            "term": 6,
-            "good": 7,
-            "bad": 8,
-            "timeout": 9
+            "init": 0.0,
+            "ok": 0.1,
+            "fail": 0.2,
+            "lost": 0.3,
+            "stop": 0.4,
+            "fin": 0.5,
+            "term": 0.6,
+            "good": 0.7,
+            "bad": 0.8,
+            "timeout": 0.9,
+            "rep": 0.01,
+            "maxout": 0.02,
         }
         self.proc_names = {
             "con": "CONNECTION",
@@ -64,8 +64,7 @@ class Codex:
             "file": "FILE",
             "reset": "RESET",
             "idle": "IDLE",
-            "drift": "DriftCorrection",
-
+            "drift": "DRIFT_CORRECTION",
             "exp": "EXPERIMENT",
             "ses": "SESSION",
             "block": "BLOCK",
@@ -74,7 +73,6 @@ class Codex:
             "stim": "STIMULUS",
             "resp": "RESPONSE",
             "fb": "FEEDBACK",
-
             "sys": "SYSTEM"
         }
         self.state_names = {
@@ -87,7 +85,9 @@ class Codex:
             "term": "TERMINATED",
             "good": "VALID",
             "bad": "INVALID",
-            "timeout": "TIMEOUT"
+            "timeout": "TIMEOUT",
+            "rep": "REPEAT",
+            "maxout": "MAXED_OUT",
         }
 
     def code(self, proc, state):

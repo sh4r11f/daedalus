@@ -32,7 +32,7 @@ import pylink
 from .EyeLinkCoreGraphicsPsychoPy import EyeLinkCoreGraphicsPsychoPy
 
 
-class Eyetracking(PsychoPhysicsExperiment):
+class EyetrackingExperiment(PsychoPhysicsExperiment):
     """
     Eyetracking class for running experiments.
 
@@ -49,7 +49,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         tracker_model: str = "Eyelink1000Plus"
     ):
         # Setup
-        super().__init__(name, root, version, platform, debug)
+        super().__init__(root, platform, debug)
 
         self.exp_type = "eyetracking"
 
@@ -75,10 +75,10 @@ class Eyetracking(PsychoPhysicsExperiment):
         fixation_check_frequency = self.exp_params["General"]["fix_check_interval"]
         self.fix_check_interval = self.ms2fr(1000 / fixation_check_frequency)
 
-    def init_experiment(self):
+    def init_session(self):
         """
         """
-        super().init_experiment()
+        super().init_session()
 
         # Connect to the eye tracker
         self.init_tracker()
@@ -87,13 +87,13 @@ class Eyetracking(PsychoPhysicsExperiment):
         self.tracker.go_offline()
 
         # Open the EDF file on the tracker
-        self.hanlde_edf_opening()
+        self.handle_edf_opening()
 
         # Open graphics environment
         ge = self.forge_graphics_env()
         self.tracker.set_calibration_graphics(ge)
 
-    def hanlde_edf_opening(self):
+    def handle_edf_opening(self):
         """
         """
         # Open the EDF file on the tracker
@@ -104,41 +104,47 @@ class Eyetracking(PsychoPhysicsExperiment):
             self._error(self.codex.message("file", "fail"))
             self.goodbye(error)
 
-    def prepare_block(self, block_id, calib=False):
+    def prepare_block(self, block_id, repeat=False, calib=False):
         """
         """
         # Start the clock and log
         self.block_id = block_id
-        self.block_clock.reset()
-        self.log_info(self.codex.message("block", "init"))
-        self.log_info(f"BLOCKID_{self.block_id}")
-
-        # Initialize the block data
-        self.init_block_data()
+        self.tracker.eyelink.terminalBreak(0)
 
         # Show block info as text
         n_blocks = len(self.get_reamining_blocks())
-        txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
-        txt += "Press Space to resume or Enter to (re)calibrate the eye tracker."
-        resp = self.show_msg(txt)
-        if resp == "space":
+        if repeat:
+            txt = f"You are repeating block {self.block_id}/{n_blocks}.\n\n"
+            txt += "Press Space to recalibrate the eyetracker."
+        else:
+            txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
             if calib:
-                self.log_info(self.codex.message("calib", "lost"))
-                txt = "Recalibration is required!\n\n"
-                txt += "Press Enter to recalibrate the eye tracker or Escape to skip it."
-                resp = self.show_msg(txt)
-                if resp == "escape":
-                    self.tracker.send_code("calib", "term")
-                    self.log_warning(self.codex.message("calib", "term"))
-                elif resp == "enter":
-                    self.run_calibration()
-        elif resp == "enter":
-            self.run_calibration()
+                txt += "Press Space to recalibrate the eyetracker."
+            else:
+                txt += "Press Space whenever you're ready."
+        while True:
+            resp = self.show_msg(txt)
+            if resp == "space":
+                calib = self.run_calibration()
+                # Halt if calibration failed
+                if not calib:
+                    code = self.tracker.send_code("calib", "fail")
+                    self.log_error(self.codex.code2msg(code))
+                    txt = "Calibration failed after attempts. Press Space to ignore (DANGER!)"
+                    self.show_msg(txt)
+                # Reset the block clock
+                self.block_clock.reset()
+                # Initialize the block data
+                self.init_block_data()
+                # Log the start of the block
+                self.log_info(self.codex.message("block", "init"))
+                self.log_info(f"BLOCKID_{self.block_id}")
+                break
 
     def prepare_trial(self, trial_id, fixation):
         """
         """
-        super().prepare_trial()
+        super().prepare_trial(trial_id)
         recalib = False
 
         # Establish fixation
@@ -160,7 +166,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         res = self.tracker.come_online()
         msg = self.codex.code2msg(res)
         if res == self.codex.code("rec", "ok"):
-            self._info(msg)
+            self.log_info(msg)
         else:
             self.goodbye(msg)
 
@@ -184,6 +190,17 @@ class Eyetracking(PsychoPhysicsExperiment):
         self.save_events_data()
         self.save_samples_data()
 
+    def stop_block(self):
+        """
+        Stop the block.
+        """
+        # Stop recording
+        self.tracker.eyelink.terminalBreak(1)
+        self.tracker.go_offline()
+        self.tracker.reset()
+        self.tracker.send_code("block", "stop")
+        super().stop_block()
+
     def init_tracker(self):
         """
         Initializes the eye tracker and connect to it and configure it.
@@ -194,6 +211,7 @@ class Eyetracking(PsychoPhysicsExperiment):
         self.tracker = MyeLink(self.name, self.tracker_params, self.debug)
         self.tracker.connect()
         self.tracker.configure()
+        self.tracker.eyelink.setName(self.platform)
 
     def system_check(self):
         """
@@ -430,7 +448,7 @@ class Eyetracking(PsychoPhysicsExperiment):
             calibrated = False
             while not calibrated:
                 if attempt > int(self.exp_params["General"]["calibration_max_attempts"]):
-                    code = self.tracker.send_code("calib", "timeout")
+                    code = self.tracker.send_code("calib", "maxout")
                     self.log_error(self.codex.code2msg(code))
                     calibrated = False
                     break
