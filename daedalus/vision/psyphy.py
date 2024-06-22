@@ -21,9 +21,10 @@ from pathlib import Path
 from typing import Dict, Union, Tuple
 from datetime import date
 
+from emoji import emojize
+
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 from psychopy import core, monitors, visual, event, info, gui
 from psychopy.iohub.devices import Computer
@@ -173,7 +174,9 @@ class PsychoPhysicsExperiment:
         self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
         self.logger.info(f"Looks like we're running a {self.exp_type} experiment called {self.name} (v{self.version}).")
         self.logger.info(f"Today is {self.today}.")
-        self.logger.info(f"Subject {self.sub_id} is about to start session {self.ses_id} of the experiment (task: {self.task_name}).")
+        self.logger.info(f"Subject {self.sub_id}")
+        self.logger.info(f"Session {self.ses_id}")
+        self.logger.info(f"Task: {self.task_name}.")
         self.logger.info("Let's get started!")
         self.logger.info("-" * 80)
 
@@ -212,21 +215,32 @@ class PsychoPhysicsExperiment:
         Prepare the trial for the block.
 
         Args:
-            trial_num (int): Trial number.
+            trial_id (int): Trial number.
         """
         self.trial_id = self._fix_id(trial_id)
         self.trial_clock.reset()
         self.log_info(self.codex.message("trial", "init"))
         self.log_info(f"TRIALID_{self.trial_id}")
 
-    def wrap_trial(self, repeat=False):
+    def wrap_trial(self):
         """
         Wrap up the trial.
         """
-        if repeat:
-            self.log_info(self.codex.message("trial", "rep"))
-        else:
-            self.log_info(self.codex.message("trial", "fin"))
+        self.log_info(self.codex.message("trial", "fin"))
+        self.window.recordFrameIntervals = False
+        self.window.frameIntervals = []
+        self.clear_screen()
+
+    def stop_trial(self):
+        """
+        Stop the trial.
+        """
+        self.stim_data.loc[self.trial_id - 1, "TrialRepeated"] = 1
+        self.behav_data.loc[self.trial_id - 1, "TrialRepeated"] = 1
+        self.log_warn(self.codex.message("trial", "stop"))
+        self.fix_warning.draw()
+        self.window.flip()
+        core.wait(self.stim_params["Fixation"]["warning_duration"])
         self.window.recordFrameIntervals = False
         self.window.frameIntervals = []
         self.clear_screen()
@@ -252,8 +266,9 @@ class PsychoPhysicsExperiment:
         Stop the block.
         """
         self.log_warn(self.codex.message("block", "stop"))
-        msg = f"Stopping block {self.block_id} due to too many failed trials (n={self.exp_params['General']['trial_fail_limit']})."
-        self.show_msg(msg, wait_time=5, msg_type="warning")
+        fail_lim = self.exp_params["General"]["trial_fail_limit"]
+        msg = f"Stopping block {self.block_id} due to too many failed trials (n={fail_lim})."
+        self.show_msg(msg, wait_time=self.stim_params["Message"]["warning_duration"], msg_type="warning")
 
     def turn_off(self):
         """
@@ -261,7 +276,8 @@ class PsychoPhysicsExperiment:
         """
         # Log the end of the session
         self.log_info(self.codex.message("ses", "fin"))
-        self.show_msg(f"Amazing! You finished session {self.ses_id} of the experiment", wait_time=5)
+        msg = f"Session {self.ses_id} of the experiment is over. Thank you for participating :)"
+        self.show_msg(msg, wait_time=self.stim_params["Message"]["thanks_duration"], msg_type="info")
         # Save
         self.save_session_complete()
         # Quit
@@ -478,7 +494,9 @@ class PsychoPhysicsExperiment:
             list: List of completed blocks for the task.
         """
         all_blocks = self._get_task_blocks()
-        files = self.ses_data_dir.glob(f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-*_behavioral.csv")
+        files = self.ses_data_dir.glob(
+            f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-*_behavioral.csv"
+        )
         comp_blocks = [file.stem.split("_")[-2].split("-")[1] for file in files]
         remain_blocks = [block for block in all_blocks if block not in comp_blocks]
 
@@ -488,7 +506,8 @@ class PsychoPhysicsExperiment:
         """
         Initialize the frame intervals data.
         """
-        frames_file = self.ses_data_dir / f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_FrameIntervals.csv"
+        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_FrameIntervals.csv"
+        frames_file = self.ses_data_dir / fname
         if frames_file.exists():
             self.log_warning(f"File {frames_file} already exists. Renaming the file as backup.")
             frames_file.rename(frames_file.with_suffix(".BAK"))
@@ -503,7 +522,8 @@ class PsychoPhysicsExperiment:
         """
         Initialize the stimulus data.
         """
-        stim_file = self.ses_data_dir / f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_stimuli.csv"
+        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_stimuli.csv"
+        stim_file = self.ses_data_dir / fname
         if stim_file.exists():
             self.log_warning(f"File {stim_file} already exists. Renaming the file as backup.")
             stim_file.rename(stim_file.with_suffix(".BAK"))
@@ -517,7 +537,8 @@ class PsychoPhysicsExperiment:
         """
         Initialize the behavioral data.
         """
-        behav_file = self.ses_data_dir / f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_behavioral.csv"
+        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_behavioral.csv"
+        behav_file = self.ses_data_dir / fname
         if behav_file.exists():
             self.log_warning(f"File {behav_file} already exists. Renaming the file as backup.")
             behav_file.rename(behav_file.with_suffix(".BAK"))
@@ -539,7 +560,9 @@ class PsychoPhysicsExperiment:
         """
         Load the session data.
         """
-        files = self.ses_data_dir.glob(f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-*_{data_type}.csv")
+        files = self.ses_data_dir.glob(
+            f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-*_{data_type}.csv"
+        )
         data = pd.concat([pd.read_csv(file) for file in files], ignore_index=True)
 
         return data
@@ -627,8 +650,8 @@ class PsychoPhysicsExperiment:
             ValueError: If the experiment is cancelled.
         """
         dlg = gui.Dlg(
-            title=f"Welcome!",
-            labelButtonOK="Let's go",
+            title="Welcome!",
+            labelButtonOK=emojize(":OK_button:"),
             labelButtonCancel="Away with you",
             alwaysOnTop=True
         )
@@ -641,8 +664,12 @@ class PsychoPhysicsExperiment:
 
         # Participant and experimenter
         dlg.addText("Who are you?", color=self.exp_params["General"]["gui_text_color"])
-        dlg.addField(key="experimenter", value="Experimenter", choices=[a["name"] for a in self.settings["Study"]["Authors"]])
-        dlg.addField(key="selection", label="Participant", choices=["Register", "Load"])
+        dlg.addField(
+            key="experimenter",
+            value="Experimenter",
+            choices=[a["name"] for a in self.settings["Study"]["Authors"]]
+        )
+        dlg.addField(key="selection", label="Participant", choices=[emojize(":NEW_button:"), "Load"])
 
         info = dlg.show()
         if dlg.OK:
@@ -669,14 +696,14 @@ class PsychoPhysicsExperiment:
         )
 
         # Check what PIDs are already used
-        dlg.addText("Participant", color=self.exp_params["General"]["gui_text_color"])
-        pids = [f"{id:02d}" for id in range(1, int(self.exp_params["NumSubjects"]) + 1)]
+        dlg.addText("Participant", color=self.stim_params["Display"]["gui_text_color"])
+        pids = [f"{id:02d}" for id in range(1, int(self.exp_params["Subjects"]["number"]) + 1)]
         burnt_pids = self.load_participants_file()["PID"].values
         available_pids = [pid for pid in pids if pid not in burnt_pids]
 
         # Add fields
-        dlg.addField(key="subj_id", label="PID", choices=available_pids)
-        required_info = self.exp_params["SubjectInfo"]
+        dlg.addField(key="subj_id", label=emojize(":ID_button:"), choices=available_pids)
+        required_info = self.exp_params["Subjects"]["info"]
         for field in required_info:
             if isinstance(required_info[field], list):
                 dlg.addField(key=field, label=field,  choices=required_info[field])
@@ -716,7 +743,7 @@ class PsychoPhysicsExperiment:
         )
 
         # Find the PID and initials that are registered
-        dlg.addText("Participant", color=self.exp_params["General"]["gui_text_color"])
+        dlg.addText("Participant", color=self.stim_params["Display"]["gui_text_color"])
         df = self.load_participants_file()
         pids = df["PID"].values
         initials = df["Initials"].values
@@ -752,15 +779,15 @@ class PsychoPhysicsExperiment:
             alwaysOnTop=True
         )
         # Add the subject info
-        dlg.addText("Participant Information", color=self.exp_params["General"]["gui_text_color"])
-        valid_info_fields = ["PID"] + list(self.exp_params["SubjectInfo"].keys())
+        dlg.addText("Participant Information", color=self.stim_params["Display"]["gui_text_color"])
+        valid_info_fields = ["PID"] + list(self.exp_params["Subjecs"]["info"].keys())
         sub_info = self.load_subject_info()
         for field in sub_info.columns:
             if field in valid_info_fields:
                 dlg.addFixedField(key=field, label=field, value=sub_info[field].values[0])
 
         # Add sessions and tasks that are available
-        dlg.addText("Session and Task", color=self.exp_params["General"]["gui_text_color"])
+        dlg.addText("Session and Task", color=self.stim_params["Display"]["gui_text_color"])
         comp = sub_info.loc[~(pd.isnull(sub_info["Completed"])), ["Session", "Task"]]
         for ses in self.exp_params["Sessions"]:
             if ses["id"] not in comp["Session"].values:
@@ -809,7 +836,7 @@ class PsychoPhysicsExperiment:
         Initializes the participants file.
         """
         columns = ["PID", "Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
-        columns += list(self.exp_params["SubjectInfo"].keys())
+        columns += list(self.exp_params["Subjects"]["info"].keys())
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.participants_file, sep="\t", index=False)
 
@@ -871,7 +898,7 @@ class PsychoPhysicsExperiment:
                 )
                 results.append(f"(✘) The actual refresh rate {rf} does not match {intended_rf}.")
             else:
-                self.logging.info(f"Monitor refresh rate checks out.")
+                self.logging.info("Monitor refresh rate checks out.")
                 results.append("(✓) Monitor refresh rate checks out.")
 
         # Processes
@@ -979,7 +1006,7 @@ class PsychoPhysicsExperiment:
         params = self.stim_params["Message"]
         if msg_type == "info":
             self.msg_stim.color = params["normal_text_color"]
-        elif msg_type == "warning":
+        elif msg_type in ["warning", "error"]:
             self.msg_stim.color = params["warning_text_color"]
 
         # Show the message
@@ -1067,14 +1094,13 @@ class PsychoPhysicsExperiment:
 
     def fr2ms(self, frames: int):
         """Converts durations from display frames to ms"""
-        return np.ceil(frames * 1000 / self.monitor_params["refresh_rate"]).astype(int)
+        return frames * 1000 / self.monitor_params["refresh_rate"]
 
     def time_point_to_frame_idx(self, time, frame_times):
         """
         Find the frame number for a given time.
         """
-        sum_frames = np.cumsum(frame_times)
-        return np.argmax(sum_frames > time)
+        return np.argmax(np.cumsum(frame_times) > time)
 
     @staticmethod
     def period_edge_frames(frames, period):

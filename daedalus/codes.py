@@ -49,6 +49,8 @@ class Codex:
             "view": 19,
             "sys": 20,
             "iti": 21,
+            "usr": 22,
+            "sacc": 23,
         }
         self.state_codes = {
             "init": 0.0,
@@ -92,6 +94,8 @@ class Codex:
             "view": "VIEW",
             "sys": "SYSTEM",
             "iti": "INTER_TRIAL_INTERVAL",
+            "usr": "USER",
+            "sacc": "SACCADE",
         }
         self.state_names = {
             "init": "START",

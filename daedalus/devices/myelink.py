@@ -178,6 +178,7 @@ class MyeLink:
         self.eyelink.waitForModeReady(self.params["wait_time"])
         # Begin realtime mode
         self.eyelink.beginRealTimeMode(self.params["wait_time"])
+        self.eyelink.waitForModeReady(self.params["wait_time"])
         # wait for link data to arrive
         try:
             self.eyelink.waitForBlockstart(self.params["wait_time"], 1, 1)
@@ -469,7 +470,7 @@ class MyeLink:
             }
 
         # Initialize the event information
-        info = {key: [] for key in events_of_interest.keys()}
+        events = []
 
         # Go through the samples and events in the buffer
         while True:
@@ -486,24 +487,22 @@ class MyeLink:
 
             # Get the event data for the tracked eye
             if (item_type is not None) and (item_type in events_of_interest.values()):
-                event_name = [key for key, value in events_of_interest.items() if value == item_type][0]
                 data = self.eyelink.getFloatData()
                 if data.getEye() == self.params["eye"]:
-                    if event_name == "fixation_start":
+                    if item_type == pylink.STARTFIX:
                         func = self.detect_fixation_start_event
-                    elif event_name == "fixation_update":
+                    elif item_type == pylink.ENDFIX:
                         func = self.detect_fixation_update_event
-                    elif event_name == "saccade_start":
+                    elif item_type == pylink.FIXUPDATE:
                         func = self.detect_saccade_start_event
-                    elif event_name == "fixation_end":
+                    elif item_type == pylink.STARTSACC:
                         func = self.process_fixation_end_event
-                    elif event_name == "saccade_end":
+                    elif item_type == pylink.ENDSACC:
                         func = self.process_saccade_end_event
-
                     # Detect/process the event data
-                    info[event_name].append(func(data))
+                    events.append(func(data))
 
-        return info
+        return events
 
     def detect_fixation_start_event(self, data):
         """
@@ -514,6 +513,7 @@ class MyeLink:
         ppd_x, ppd_y = data.getStartPPD()
 
         return {
+            "event_type": "fixation_start",
             "time_start": time,
             "gaze_start_x": gaze_x,
             "gaze_start_y": gaze_y,
@@ -530,6 +530,7 @@ class MyeLink:
         ppd_x, ppd_y = data.getEndPPD()
 
         return {
+            "event_type": "fixation_end",
             "time_end": time,
             "gaze_end_x": gaze_x,
             "gaze_end_y": gaze_y,
@@ -551,6 +552,7 @@ class MyeLink:
         ppd_y = (ppd_start_y + ppd_end_y) / 2
 
         return {
+            "event_type": "fixation_update",
             "time_start": time_start,
             "time_end": time_end,
             "duration": duration,
@@ -569,6 +571,7 @@ class MyeLink:
         ppd_x, ppd_y = data.getStartPPD()
 
         return {
+            "event_type": "saccade_start",
             "time_start": time,
             "gaze_start_x": gaze_x,
             "gaze_start_y": gaze_y,
@@ -585,6 +588,7 @@ class MyeLink:
         ppd_x, ppd_y = data.getEndPPD()
 
         return {
+            "event_type": "saccade_end",
             "time_end": time,
             "gaze_end_x": gaze_x,
             "gaze_end_y": gaze_y,
@@ -619,6 +623,7 @@ class MyeLink:
         pupil_avg = event_data.getAveragePupilSize()
 
         return {
+            "event_type": "fixation_end",
             "time_start": time_start,
             "time_end": time_end,
             "duration": duration,
@@ -668,6 +673,7 @@ class MyeLink:
         velocity_peak = event_data.getPeakVelocity()
 
         return {
+            "event_type": "saccade_end",
             "time_start": time_start,
             "time_end": time_end,
             "duration": duration,
@@ -688,7 +694,7 @@ class MyeLink:
             "velocity_peak": velocity_peak
         }
 
-    def realtime_fixation_monitor(self, target_pos, valid_dist, min_gaze_dur, clock):
+    def realtime_gaze_monitor(self, target_pos, valid_dist, min_gaze_dur, clock):
         """
         Runs a while loop and keeps it running until gaze on some region is established.
 
@@ -755,7 +761,7 @@ class MyeLink:
 
         return trigger
 
-    def realtime_fixation_detector(self, target_pos, valid_dist, prev_sample):
+    def realtime_fixation_detection(self, target_pos, valid_dist, prev_sample):
         """
         Function to monitor gaze on a static point, like a fixation cross.
 
@@ -801,7 +807,7 @@ class MyeLink:
 
         return current_sample, fixation_info
 
-    def realtime_saccade_detector(
+    def realtime_saccade_detection(
         self,
         target_onset: float,
         target_pos: Union[List, Tuple],

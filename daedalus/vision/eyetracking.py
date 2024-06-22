@@ -20,7 +20,7 @@
 import numpy as np
 import pandas as pd
 
-from daedalus.psyphy import PsychoPhysicsExperiment, PsychoPhysicsDatabase
+from .psyphy import PsychoPhysicsExperiment, PsychoPhysicsDatabase
 from daedalus.data.database import EyeTrackingEvent, EyeTrackingSample
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
@@ -71,9 +71,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.edf_host_file = None
 
         # Monitoring parameters
-        self.fix_radi = deg2pix(self.exp_params["General"]["fix_radi"])
-        fixation_check_frequency = self.exp_params["General"]["fix_check_interval"]
+        self.fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"])
+        fixation_check_frequency = self.exp_params["General"]["fixation_check_frequency"]
         self.fix_check_interval = self.ms2fr(1000 / fixation_check_frequency)
+        self.sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"])
 
     def init_tracker(self):
         """
@@ -100,6 +101,11 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
     def prepare_block(self, block_id, repeat=False, calib=False):
         """
         Prepares the block for the experiment.
+
+        Args:
+            block_id (int): The ID of the block.
+            repeat (bool): Whether the block is being repeated or not.
+            calib (bool): Whether to calibrate or not.
         """
         # Set the ID of the block
         self.block_id = self._fix_id(block_id)
@@ -124,8 +130,11 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             if calib_res == self.codex.message("calib", "term"):
                 self.show_msg("Skipping calibration.", msg_type="warning")
             elif calib_res == self.codex.message("calib", "fail"):
-                self.show_msg("Calibration failed. Please try again.", msg_type="warning")
-                self.prepare_block(self.block_id, repeat, calib)
+                resp = self.show_msg("Calibration failed. Try again? (Space)", msg_type="warning")
+                if resp == "space":
+                    self.prepare_block(self.block_id, repeat, calib)
+                else:
+                    self.goodbye(calib_res)
             else:
                 msg_ = ["Calibration is done."]
                 msg_.append(msg)
@@ -145,84 +154,148 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.direct_msg(f"BLOCKID {self.block_id}")
         self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}/{n_blocks}.'")
 
-    def prepare_trial(self, trial_id, fixation):
+    def prepare_trial(self, trial_id):
         """
+        Prepares a trial for the experiment by running drift correction and starting the recording.
+
+        Args:
+            trial_id (int): The ID of the trial.
+
+        Returns:
+            bool: Whether to recalibrate or not.
         """
         self.trial_id = self._fix_id(trial_id)
+        self.tracker.eyelink.terminalBreak(0)
 
         # Establish fixation
-        fix_status = self.establish_fixation(fixation)
-        if fix_status:
+        fix_status = self.establish_fixation()
+        if fix_status == self.codex.message("fix", "ok"):
             # Drift correction
-            fix_pos = self.cart2mat(*fixation.pos)
-            msg = self.tracker.drift_correct(fix_pos)
-            if msg == self.codex.message("con", "lost"):
-                self.handle_connection_loss()
-            else:
-                if msg == self.codex.message("drift", "ok"):
-                    self.log_info(msg)
-                    recalib = False
-                else:
-                    self.log_warning(msg)
-                    recalib = True
+            fix_pos = self.cart2mat(*self.fix_stim.pos)
+            drift_status = self.tracker.drift_correct(fix_pos)
+            if drift_status == self.codex.message("drift", "ok"):
+                self.log_info(drift_status)
+                recalib = False
                 # Start recording
                 on_status = self.tracker.come_online()
                 if on_status == self.codex.message("rec", "init"):
                     self.log_info(on_status)
                     self.trial_clock.reset()
                     self.log_info(f"TRIALID_{self.trial_id}")
-                    self.tracker.direct_msg(f"TRIALID {trial_id}")
+                    self.tracker.direct_msg(f"TRIALID {self.trial_id}")
                     self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}, Trial {self.trial_id}.'")
                     self.tracker.direct_msg("!V CLEAR 128 128 128")
                 else:
-                    self.log_error(on_status)
+                    self.handle_not_recording(on_status)
+            elif drift_status == self.codex.message("drift", "term"):
+                self.log_warning(drift_status)
+                recalib = True
+            elif drift_status == self.codex.message("con", "lost"):
+                self.handle_connection_loss(drift_status)
+                recalib = self.prepare_trial()
+            else:
+                recalib = self.handle_drift_error(drift_status)
         # Fixation timeout
-        else:
+        elif fix_status == self.codex.message("fix", "timeout"):
             recalib = True
+        else:
+            self.handle_connection_loss(fix_status)
+            recalib = self.prepare_trial()
 
+        return recalib
+
+    def handle_drift_error(self, error):
+        """
+        Handle drift correction errors.
+
+        Args:
+            error (str): The error message or code.
+
+        Returns:
+            bool: Whether to recalibrate or not.
+        """
+        self.log_error(self.codex.message("drift", "fail"))
+        self.log_error(error)
+        msg = f"Drift correction failed.\n{error}\nRetry? (Space)"
+        resp = self.show_msg(msg, msg_type="error")
+        if resp == "space":
+            msg = self.tracker.codex_msg("trial", "rep")
+            self.log_warning(msg)
+            recalib = self.prepare_trial(self.trial_id)
+        else:
+            recalib = False
         return recalib
 
     def handle_not_recording(self, error):
         """
+        Handle the case when the eyetracker is not recording.
+
+        Args:
+            error (str): The error message or code.
         """
+        self.log_error(self.codex.message("rec", "fail"))
+        self.log_error(error)
         msg = f"Eyetracker is not recording.\n{error}\nReconnect? (Space)"
-        resp = self.show_msg(msg, msg_type="warning")
+        resp = self.show_msg(msg, msg_type="error")
+        if resp == "space":
+            msg = self.tracker.codex_msg("con", "rep")
+            self.log_warning(msg)
+            self.init_tracker()
+
+    def handle_connection_loss(self, error=None):
+        """
+        Handle the case when the connection to the eyetracker is lost.
+
+        Args:
+            error (str): The error message or code.
+        """
+        msg = "Connection to the eye tracker is lost.\n"
+        if error is not None:
+            msg += f"{error}\n"
+            self.log_error(error)
+        msg += "Reconnect? (Space)"
+        self.log_error(self.codex.message("con", "lost"))
+        resp = self.show_msg(msg, msg_type="error")
         if resp == "space":
             self.init_tracker()
 
-    def handle_connection_loss(self):
+    def wrap_trial(self):
         """
-        """
-        msg = "Connection to the eye tracker is lost. Reconnect? (Space)"
-        resp = self.show_msg(msg, msg_type="warning")
-        if resp == "space":
-            self.init_tracker()
-
-    def wrap_trial(self, repeat):
-        """
+        Finish up a trial.
         """
         super().wrap_trial()
 
         # Messages
-        if repeat:
-            self.tracker.direct_msg(f"TRIAL_RESULT {pylink.REPEAT_TRIAL}")
-        else:
-            self.tracker.direct_msg(f"TRIAL_RESULT {pylink.TRIAL_OK}")
+        self.tracker.codex_msg("trial", "fin")
+        self.tracker.direct_msg(f"TRIAL_RESULT {pylink.TRIAL_OK}")
         self.tracker.direct_msg("!V CLEAR 128 128 128")
 
         # Stop recording
         self.tracker.go_offline()
         self.tracker.reset()
 
+    def stop_trial(self):
+        """
+        Stop a trial midway.
+        """
+        self.tracker.codex_msg("trial", "stop")
+        self.tracker.direct_msg(f"TRIAL_RESULT {pylink.REPEAT_TRIAL}")
+        self.tracker.eyelink.terminalBreak(1)
+        self.tracker.go_offline()
+        self.tracker.reset()
+        super().stop_trial()
+
     def wrap_block(self):
         """
+        Wraps up a block by saving the data and stopping the recording.
         """
-        super.wrap_block()
-
         # Stop recording
         self.tracker.codex_msg("block", "fin")
         self.tracker.go_offline()
         self.tracker.reset()
+
+        # Call the parent method
+        super.wrap_block()
 
         # Save the data
         self.save_events_data()
@@ -233,7 +306,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Stop the block.
         """
         # Stop recording
-        self.tracker.direct_msg(f"TRIAL_RESULT {pylink.TRIAL_ERROR}")
         self.tracker.codex_msg("block", "stop")
         self.tracker.eyelink.terminalBreak(1)
         self.tracker.go_offline()
@@ -246,6 +318,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         Args:
             msg (str): The message to show before calibration.
+
+        Returns:
+            str: The status of the calibration.
         """
         # Message
         if msg is None:
@@ -270,7 +345,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             res = self.tracker.calibrate()
             if res == self.codex.message("calib", "ok"):
                 self.log_info(res)
-                self.msg_stim.text = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
+                txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
+                self.msg_stim.text = txt
                 while self.tracker.eyelink.inSetup():
                     self.msg_stim.draw()
                     self.window.flip()
@@ -284,6 +360,13 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
     def tracker_check(self):
         """
+        Runs a check on the eye tracker in the following order:
+            1. Start recording
+            2. Check the eye
+            3. Check the samples
+
+        Returns:
+            list: The results of the check.
         """
         # Start testing
         results = []
@@ -371,41 +454,41 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         # Set the calibration graphics
         self.tracker.set_calibration_graphics(width, height, genv)
 
-    def check_fixation_in_square(self, center, radius, fix_coords):
+    def gaze_in_square(self, gaze, center, length):
         """
-        Check if the fixation is within the square.
+        Check if the gaze is within a target square.
 
         Args:
+            gaze (tuple): The gaze coordinates.
             center (tuple): The center of the square.
-            radius (int): The radius of the square.
-            fix_coords (tuple): The fixation coordinates.
+            length (float): The length of the square.
 
         Returns:
             bool: Whether the fixation is within the square or not.
         """
-        valid_x = center[0] - radius < fix_coords[0] < center[0] + radius
-        valid_y = center[1] - radius < fix_coords[1] < center[1] + radius
+        gx, gy = gaze
+        cx, cy = center
+        valid_x = cx - length / 2 < gx < cx + length / 2
+        valid_y = cy - length / 2 < gy < cy + length / 2
 
         if valid_x and valid_y:
             return True
         else:
             return False
 
-    def check_fixation_in_circle(self, fx, fy, gx, gy, radius):
+    def gaze_in_circle(self, gaze, center, radius):
         """
-        Check if the fixation is within the circle.
+        Check if the gaze is within a target circle.
 
         Args:
-            fx (float): The x-coordinate of the fixation.
-            fy (float): The y-coordinate of the fixation.
-            gx (float): The x-coordinate of the gaze.
-            gy (float): The y-coordinate of the gaze.
+            gaze (tuple): The gaze coordinates.
+            center (tuple): The center of the circle.
             radius (float): The radius of the circle.
 
         Returns:
             bool: Whether the fixation is within the circle or not.
         """
-        offset = utils.get_hypot(fx, fy, gx, gy)
+        offset = utils.get_hypot(gaze, center)
         if offset < radius:
             return True
         else:
@@ -437,52 +520,54 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         return self.window.size[0] / 2 + x, self.window.size[1] / 2 - y
 
-    def establish_fixation(self, fixation, method="circle"):
+    def establish_fixation(self, method="circle", fix=None):
         """
         Establish fixation.
 
         Args:
-            fixation (object): The fixation stimulus.
-            timeout (float): The time to wait for fixation.
-            radi (float): The radius of the circle.
+            method (str): The method to use for fixation.
+            fix (object): The fixation stimulus.
 
         Returns:
             bool: Whether the fixation is established or not.
         """
         fix_event = {"fixation_start": pylink.STARTFIX}
-        fx, fy = fixation.pos
-
+        if fix is None:
+            fix = self.fix_stim
         start_time = self.trial_clock.getTime()
         while True:
             if self.trial_clock.getTime() - start_time > self.exp_params["General"]["fixation_timeout"]:
                 msg = self.tracker.codex_msg("fix", "timeout")
                 self.log_error(msg)
-                return False
+                return msg
 
             # Draw fixation
-            fixation.draw()
+            fix.draw()
             self.window.flip()
 
             # Check eye events
-            eye_events = self.tracker.process_events_online(fix_event)
-            if isinstance(eye_events, int):
-                self.log_error(eye_events)
-                return False
-            elif eye_events["fixation_start"]:
+            events = self.tracker.process_events_online(fix_event)
+            if events == self.codex.message("con", "lost"):
+                self.log_error(events)
+                return msg
+
+            fixations = []
+            for event in events:
                 # Only take the last fixation
-                gaze_x = eye_events["fixation_start"][-1]["gaze_start_x"]
-                gaze_y = eye_events["fixation_start"][-1]["gaze_start_y"]
+                gaze_x = event["gaze_start_x"]
+                gaze_y = event["gaze_start_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
-                    valid = self.check_fixation_in_circle(fx, fy, gx, gy, self.fix_radi)
+                    valid = self.gaze_in_circle((gx, gy), fix.pos, self.fix_radi)
                 elif method == "square":
-                    valid = self.check_fixation_in_square(fixation.pos, self.fix_radi, (gx, gy))
+                    valid = self.gaze_in_square((gx, gy), fix.pos, self.fix_radi)
                 else:
                     raise NotImplementedError("Only circle and square methods are implemented.")
-                if valid:
-                    msg = self.tracker.codex_msg("fix", "ok")
-                    self.log_info(msg)
-                    return True
+                fixations.append(valid)
+
+            if any(valid):
+                msg = self.tracker.codex_msg("fix", "ok")
+                return msg
 
     def reboot_tracker(self):
         """
@@ -491,7 +576,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.reset()
         self.tracker.connect()
 
-    def monitor_fixation(self, fix_pos=(0, 0), method="circle"):
+    def monitor_fixation(self, fix_pos=None, method="circle"):
         """
         Monitor fixation.
 
@@ -505,92 +590,119 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
         events = self.tracker.process_events_online(fix_events)
-        fx, fy = fix_pos
 
         # Check if there was an error
-        if isinstance(events, int):
+        if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.log_error(events)
-            return events, events
-
-        # Check if the fixation is lost
-        if events["fixation_end"]:
-            msg = self.tracker.codex_msg("fix", "lost")
-            self.log_warn(msg)
-            return msg, events
+            return events, None
 
         # Check if the fixation is valid
-        valid_updates = []
-        if events["fixation_update"]:
-            for event in events["fixation_update"]:
+        if fix_pos is None:
+            fix_pos = self.fix_stim.pos
+        updates = []
+        for event in events:
+            if event["event_type"] == "fixation_end":
+                msg = self.tracker.codex_msg("fix", "lost")
+                self.log_warn(msg)
+                self.tracker.direct_msg(msg, delay=False)
+                return msg, events
+            else:
                 gaze_x = event["gaze_x"]
                 gaze_y = event["gaze_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
-                    check = self.check_fixation_in_circle(fx, fy, gx, gy, self.fix_radi)
+                    check = self.gaze_in_circle((gx, gy), fix_pos, self.fix_radi)
                 elif method == "square":
-                    check = self.check_fixation_in_square(fix_pos, self.fix_radi, (gx, gy))
+                    check = self.gaze_in_square((gx, gy), fix_pos, self.fix_radi)
                 else:
                     raise NotImplementedError("Method is not implemented.")
-                valid_updates.append(check)
-            if all(valid_updates):
-                msg = self.tracker.codex_msg("fix", "ok")
-                self.log_info(msg)
-            else:
-                msg = self.tracker.codex_msg("fix", "lost")
-                self.log_warn(msg)
+                updates.append(check)
+        if updates and all(updates):
+            msg = self.codex.message("fix", "ok")
         else:
-            msg = self.tracker.codex_msg("con", "lost")
-            self.log_error(msg)
+            msg = self.codex.message("fix", "bad")
+            self.log_warn(msg)
+            self.tracker.direct_msg(msg, delay=False)
 
         return msg, events
 
-    def look_for_saccade(self, fix_pos=(0, 0), method="circle"):
+    def monitor_saccade(self, targets_pos, fix_pos=None, fix_method="circle"):
         """
         Look for saccade.
 
         Args:
-            fixation (object): The fixation stimulus.
-            timeout (float): The time to wait for fixation.
-            radi (float): The radius of the circle.
+            targets_pos (list): The position of the target.
+            fix_pos (tuple): The position of the fixation. If None, the position of fixation stimulus is used.
+            fix_method (str): The method to use for fixation.
 
         Returns:
             bool: Whether the fixation is established or not.
         """
-        fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
-        events = self.tracker.process_events_online(fix_events)
-        fx, fy = fix_pos
+        mon_events = {
+            "fixation_update": pylink.FIXUPDATE,
+            "fixation_end": pylink.ENDFIX,
+            "saccade_start": pylink.STARTSACC,
+            "saccade_end": pylink.ENDSACC
+        }
+        events = self.tracker.process_events_online(mon_events)
 
         # Check if there was an error
-        if isinstance(events, int):
+        if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.log_error(events)
-            return events, events
+            return events, None
 
-        # Check if the fixation is lost
-        if events["fixation_end"]:
-            msg = self.tracker.codex_msg("fix", "lost")
-            self.log_warn(msg)
-            return msg, events
-
-        # Check if the fixation is valid
-        valid_updates = []
-        if events["fixation_update"]:
-            for event in events["fixation_update"]:
+        # Check if the fixated and if it is valid
+        if fix_pos is None:
+            fix_pos = self.fix_stim.pos
+        updates = []
+        landings = []
+        sacc = False
+        for event in events:
+            if event["event_type"] == "fixation_update":
                 gaze_x = event["gaze_x"]
                 gaze_y = event["gaze_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
-                if method == "circle":
-                    check = self.check_fixation_in_circle(fx, fy, gx, gy, self.fix_radi)
-                elif method == "square":
-                    check = self.check_fixation_in_square(fix_pos, self.fix_radi, (gx, gy))
+                if fix_method == "circle":
+                    check = self.gaze_in_circle((gx, gy), fix_pos, self.fix_radi)
+                elif fix_method == "square":
+                    check = self.gaze_in_square((gx, gy), fix_pos, self.fix_radi)
                 else:
                     raise NotImplementedError("Method is not implemented.")
-                valid_updates.append(check)
-            if all(valid_updates):
-                msg = self.log_info(self.codex.message("fix", "ok"))
+                updates.append(check)
+            elif event["event_type"] == "saccade_start":
+                sacc = True
+            elif event["event_type"] == "saccade_end":
+                gaze_x = event["gaze_x"]
+                gaze_y = event["gaze_y"]
+                gp = self.mat2cart(gaze_x, gaze_y)
+                # check if close to target(s)
+                for tp in targets_pos:
+                    check = self.gaze_in_circle(gp, tp, self.sacc_radi)
+                    landings.append(check)
+
+        # Check if saccade is valid
+        if landings:
+            if any(landings):
+                msg = self.codex.message("sacc", "good")
+                self.log_info(msg)
+                self.tracker.direct_msg(msg, delay=False)
             else:
-                msg = self.log_warn(self.codex.message("fix", "lost"))
+                msg = self.codex.message("sacc", "bad")
+                self.log_warning(msg)
+                self.tracker.direct_msg(msg, delay=False)
+        elif sacc:
+            msg = self.codex.message("sacc", "onset")
+            self.log_info(msg)
+            self.tracker.direct_msg(msg, delay=False)
         else:
-            msg = self.log_warn(self.codex.message("con", "lost"))
+            # Check if fixation is valid
+            if updates and all(updates):
+                msg = self.codex.message("fix", "ok")
+                self.log_info(msg)
+            else:
+                msg = self.codex.message("fix", "lost")
+                self.log_warning(msg)
+                self.tracker.direct_msg(msg, delay=False)
 
         return msg, events
 
@@ -616,10 +728,11 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         ]
         self.events_data = pd.DataFrame(columns=columns)
 
-    def _init_events_file(self, file_path):
+    def _init_events_file(self):
         """
         """
-        events_file = self.ses_data_dir / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeEvents.csv"
+        fname = f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeEvents.csv"
+        events_file = self.ses_data_dir / fname
         if events_file.exists():
             self.log_warn(f"File {events_file} already exists. Renaming the file as backup.")
             backup_file = events_file.with_suffix(".BAK")
@@ -646,7 +759,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
     def init_samples_data(self):
         """
         """
-        samples_file = self.ses_data_dir / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeSamples.csv"
+        fname = f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeSamples.csv"
+        samples_file = self.ses_data_dir / fname
         if samples_file.exists():
             self.log_warn(f"File {samples_file} already exists. Renaming the file as backup.")
             backup_file = samples_file.with_suffix(".BAK")
@@ -661,16 +775,24 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "Pupil_area",
         ])
 
-    def add_to_events_data(self, data, event_type, tracker_lag):
+    def add_to_events_dataframe(self, data: dict, tracker_lag: float):
         """
+        Add a dictionary of data to the events dataframe.
+
+        Args:
+            data (dict): The data to add.
+            tracker_lag (float): The lag of the tracker.
+
+        Returns:
+            pd.DataFrame: The updated dataframe.
         """
         df = pd.DataFrame()
         df["BlockID"] = self.block_id
-        df["BlockName"] = self.task.all_blocks[self.block_id-1]["name"]
+        df["BlockName"] = self.all_blocks[self.block_id-1]["name"]
         df["TrialIndex"] = self.trial_id - 1
         df["TrialNumber"] = self.trial_id
         df["TrackerLag"] = self.ms_round(tracker_lag)
-        df["EventType"] = event_type
+        df["EventType"] = data["event_type"]
         # time
         ts = data.get("time_start")
         if ts is not None:
@@ -678,14 +800,14 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             df["EventStart_TrialTime_ms"] = self.ms_round(ts - tracker_lag)
             frame_n = self.time_point_to_frame_idx(ts, self.window.frameIntervals)
             df["EventStart_FrameN"] = frame_n
-            df["EventStart_Period"] = self.task.get_period_name(self.task.trial_frames[frame_n])
+            df["EventStart_Period"] = self.codex.code2msg(self.trial_frames[frame_n])
         te = data.get("time_end")
         if te is not None:
             df["EventEnd_TrackerTime_ms"] = self.ms_round(te)
             df["EventEnd_TrialTime_ms"] = self.ms_round(te - tracker_lag)
             frame_n = self.time_point_to_frame_idx(te, self.window.frameIntervals)
             df["EventEnd_FrameN"] = frame_n
-            df["EventEnd_Period"] = self.task.get_period_name(self.task.trial_frames[frame_n])
+            df["EventEnd_Period"] = self.codex.code2msg(self.trial_frames[frame_n])
         dur = data.get("duration")
         if dur is not None:
             df["EventDuration_ms"] = self.ms_round(dur)
@@ -780,7 +902,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         """
         # Display file
-        edf_display_file = self.ses_data_dir / f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}.edf"
+        fname = f"sub-{self.subj_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}.edf"
+        edf_display_file = self.ses_data_dir / fname
         if edf_display_file.exists():
             self.log_warn(f"File {edf_display_file} already exists. Renaming the file as backup.")
             edf_display_file.rename(edf_display_file.with_suffix(".BAK"))
@@ -939,183 +1062,3 @@ class EyeTrackingDatabase(PsychoPhysicsDatabase):
         """
         session = self.Session()
         return session.query(EyeTrackingSample).filter_by(event_id=event_id).all()
-
-    # def validate_all_gaze(self, gaze_arr: Union[List, np.ndarray], period: str):
-    #     """
-    #     Checks all gaze reports and throws an error if there is any gaze deviation.
-    #     The runtime error should be caught later and handled by recycling the trial.
-
-    #     Parameters
-    #     ----------
-    #     gaze_arr : list or array
-    #         The array of True or False for each gaze time point.
-
-    #     period : str
-    #         Name of the period where the validation is being done for.
-    #     """
-    #     # Check all the timepoints
-    #     if not all(gaze_arr):
-
-    #         # Log
-    #         self._log_run(f"Gaze fail in trial {self.trial}, {period} period.")
-    #         self.tracker.sendMessage(f"{period.upper()}_FAIL")
-
-    #         # Change fixation color to red
-    #         self.stimuli["fix"].color = [1, -1, -1]
-    #         self.stimuli["fix"].draw()
-    #         self.window.flip()
-
-    #         # Throw an error
-    #         raise RuntimeError
-
-    # def setup_run(self, inst_msg: str):
-    #     """
-    #     Initiates clocks, shows beginning message, and logs start of a run.
-
-    #     Parameters
-    #     ----------
-    #     inst_msg : str
-    #         A text that has instructions for start of the experiment
-    #     """
-    #     # Setup files for logging and saving this run
-    #     self._file_setup()
-    #     self.files["tracker_local"] = str(self.files["run"]) + '.edf'
-    #     # initiate file on the tracker
-    #     self.open_tracker_file()
-
-    #     # Clock
-    #     self.clocks["run"].reset()
-
-    #     # Change the log level task name for this run
-    #     logging.addLevel(99, self.task)
-
-    #     # Log the start of the run
-    #     self.log_section('Run', 'start')
-    #     self.tracker.sendMessage(f"TASK_START")
-    #     self.tracker.sendMessage(f"TASKID_{self.task}")
-    #     self.tracker.sendMessage(f"RUN_START")
-    #     self.tracker.sendMessage(f"RUNID_{self.exp_run}")
-
-    #     # Show instruction message before starting
-    #     self.show_msg(inst_msg)
-
-    # def setup_block(self, calib=True):
-    #     """
-    #     Sets up an experimental block. Shows a text message and initiates and calibrates the eye tracker.
-    #     """
-    #     # Timing
-    #     self.clocks["block"].reset()
-
-    #     # Tracker initialization
-    #     self.tracker.setOfflineMode()
-    #     if calib:
-    #         self.run_calibration()
-
-    #     # clear the host screen
-    #     self.tracker.sendCommand('clear_screen 0')
-
-    #     # log the beginning of block
-    #     self.log_section('Block', 'start')
-    #     self.tracker.sendMessage(f"BLOCK_START")
-    #     self.tracker.sendMessage(f"BLOCKID_{self.block}")
-
-    # def trial_cleanup(self):
-    #     """
-    #     Turns off the stimuli and stop the tracker to clean up the trial.
-    #     """
-    #     # Turn off all stimuli
-    #     self.clear_screen()
-    #     # clear the host screen too
-    #     self.tracker.sendCommand('clear_screen 0')
-
-    #     # Stop recording frame interval
-    #     self.window.recordFrameIntervals = False
-
-    #     # Stop recording; add 100 msec to catch final events before stopping
-    #     pylink.pumpDelay(100)
-    #     self.tracker.stopRecording()
-
-    # def block_cleanup(self):
-    #     """ Logs the end of a block and shows message about the remaining blocks"""
-
-    #     # Log the end of the block
-    #     self.log_section("Block", "end")
-    #     self.tracker.sendMessage(f"BLOCKID_{self.block}")
-    #     self.tracker.sendMessage(f"BLOCK_END")
-
-    #     # Turn everything off
-    #     self.clear_screen()
-    #     # clear the host screen
-    #     self.tracker.sendCommand('clear_screen 0')
-
-    #     # Get the number of all blocks for this task
-    #     n_blocks = int(self.TASKS[self.task]["blocks"])
-
-    #     # Show a message between the blocks
-    #     remain_blocks = n_blocks - self.block
-    #     btw_blocks_msg = f"You finished block number {self.block}.\n\n" \
-    #                      f"{remain_blocks} more block(s) remaining in this run.\n\n" \
-    #                      "When you are ready, press the SPACEBAR to continue to calibration."
-    #     self.show_msg(btw_blocks_msg)
-
-    # def run_cleanup(self, remain_runs):
-    #     """ Housekeeping at the end of a run"""
-
-    #     # Log
-    #     self.log_section("Run", "end")
-    #     self.tracker.sendMessage(f"RUNID_{self.exp_run}")
-    #     self.tracker.sendMessage(f"RUN_END")
-    #     self.tracker.sendMessage(f"TASKID_{self.task}")
-    #     self.tracker.sendMessage(f"TASK_END")
-
-    #     # Turn everything off
-    #     self.clear_screen()
-    #     self.tracker.sendCommand('clear_screen 0')
-
-    #     # Show an info message
-    #     btw_msg = f"\U00002705 You finished run number {self.run} of the experiment \U00002705\n\n"
-    #     if not self.practice:
-    #         btw_msg += f"There are {remain_runs} run remaining!\n\n"
-    #         btw_msg += "When you are ready, press the SPACEBAR to continue to calibration!"
-
-    #     end_msg = "\U0000235F\U0000235F\U0000235F \n\n"
-    #     end_msg += "Experiment ended! Thank you for your participation :-)\n\n"
-    #     end_msg += "\U0000235F\U0000235F\U0000235F"
-
-    #     # Terminate the tracker on the last run
-    #     if remain_runs:
-    #         self.show_msg(btw_msg, wait_for_keypress=False)
-    #         self.terminate_tracker(end=False)
-    #     else:
-    #         self.show_msg(end_msg, wait_for_keypress=False)
-    #         self.terminate_tracker(end=True)
-
-    # def save_run_data(self, blocks: list, col_names: list):
-    #     """
-    #     Saves all the blocks and logs to disk.
-
-    #     Parameters
-    #     ----------
-    #     blocks : list
-    #         All numpy arrays that contain the experiment data
-
-    #     col_names : list
-    #         Column names for each trial block
-
-    #     """
-    #     # Compile all blocks into one giant array
-    #     exp_data = np.concatenate(blocks)
-
-    #     # Make a data frame
-    #     pd_file = str(self.files["run"]) + '.csv'
-    #     df = pd.DataFrame(exp_data, columns=col_names)
-
-    #     # Save it
-    #     df.to_csv(pd_file, sep=',', index=False)
-
-    #     # Save the log files
-    #     # logs are in a tuple (or list) with the first item being the log level and the second one the log file
-    #     # self.logs["task"].write(self.files["run_log"])
-    #     # get rid of this log file
-    #     logging.flush()
-    #     logging.root.removeTarget(self.logs["task"])
