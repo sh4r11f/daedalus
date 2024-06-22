@@ -106,9 +106,9 @@ class PsychoPhysicsExperiment:
         self.trial_id = None
 
         # Task and analyzer
-        self.task_name = None
-        self.task = None
-        self.analyzer = None
+        # self.task_name = None
+        # self.task = None
+        # self.analyzer = None
 
         # Log
         self.logger = None
@@ -143,13 +143,13 @@ class PsychoPhysicsExperiment:
         # Session info
         ses_info = self.session_task_selection_gui()
         self.ses_id = self._fix_id(ses_info["ses_id"])
-        self.task_name = ses_info["task"]
+        # self.task_name = ses_info["task"]
 
         # Add extra info and save
         sub_info["Experimenter"] = hello["experimenter"]
         sub_info["Session"] = self.ses_id
         sub_info["Task"] = self.task_name
-        self.save_subject_info(sub_info)
+        self.add_to_participants(sub_info)
 
         # Setup the directories and files
         self.init_dirs()
@@ -173,6 +173,7 @@ class PsychoPhysicsExperiment:
         self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
         self.logger.info(f"Looks like we're running a {self.exp_type} experiment called {self.name} (v{self.version}).")
         self.logger.info(f"Today is {self.today}.")
+        self.logger.info(f"Subject {self.sub_id} is about to start session {self.ses_id} of the experiment (task: {self.task_name}).")
         self.logger.info("Let's get started!")
         self.logger.info("-" * 80)
 
@@ -184,7 +185,7 @@ class PsychoPhysicsExperiment:
             block_id (int): Block number.
             repeat (bool): Is the block a repeat?
         """
-        # Start the clock and log
+        # Set the ID of the block
         self.block_id = self._fix_id(block_id)
 
         # Show the start of the block message
@@ -218,11 +219,14 @@ class PsychoPhysicsExperiment:
         self.log_info(self.codex.message("trial", "init"))
         self.log_info(f"TRIALID_{self.trial_id}")
 
-    def wrap_trial(self):
+    def wrap_trial(self, repeat=False):
         """
         Wrap up the trial.
         """
-        self.log_info(self.codex.message("trial", "fin"))
+        if repeat:
+            self.log_info(self.codex.message("trial", "rep"))
+        else:
+            self.log_info(self.codex.message("trial", "fin"))
         self.window.recordFrameIntervals = False
         self.window.frameIntervals = []
         self.clear_screen()
@@ -248,18 +252,19 @@ class PsychoPhysicsExperiment:
         Stop the block.
         """
         self.log_warn(self.codex.message("block", "stop"))
-        msg = f"Repeating block {self.block_id} due to too many failed trials (n={self.exp_params['General']['trial_fail_limit']})."
+        msg = f"Stopping block {self.block_id} due to too many failed trials (n={self.exp_params['General']['trial_fail_limit']})."
         self.show_msg(msg, wait_time=5, msg_type="warning")
 
-    def end_session(self):
+    def turn_off(self):
         """
         End the session.
         """
+        # Log the end of the session
         self.log_info(self.codex.message("ses", "fin"))
         self.show_msg(f"Amazing! You finished session {self.ses_id} of the experiment", wait_time=5)
-
-        # Save and quit
+        # Save
         self.save_session_complete()
+        # Quit
         self.goodbye()
 
     def save_stim_data(self):
@@ -284,9 +289,10 @@ class PsychoPhysicsExperiment:
         """
         Save the participants data.
         """
-        sdf = self.load_subject_info()
-        df = sdf.loc[(sdf["Session"] == self.ses_id) & (sdf["Task"] == self.task_name)]
-        df["Completed"] = self.today
+        df = self.load_participants_file()
+        cond = (df["PID"] == self.sub_id) & (df["Session"] == self.ses_id & (df["Task"] == self.task_name))
+        df.loc[cond, "Completed"] = self.today
+        df.loc[cond, "Experimenter"] = experimenter
         df.to_csv(self.participants_file, sep="\t", index=False)
 
     def save_log_data(self):
@@ -807,7 +813,7 @@ class PsychoPhysicsExperiment:
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.participants_file, sep="\t", index=False)
 
-    def save_subject_info(self, sub_info):
+    def add_to_participants(self, sub_info):
         """
         Saves the subject info to the participants file.
 
@@ -823,12 +829,10 @@ class PsychoPhysicsExperiment:
         existing_pids = df["PID"].unique()
         if self.sub_id not in existing_pids:
             # new subject
-            out_df = pd.concat([df, sub_df], ignore_index=True)
-        else:
-            out_df = df.copy()
+            df = pd.concat([df, sub_df], ignore_index=True)
 
         # Save the file
-        out_df.to_csv(self.participants_file, sep="\t", index=False)
+        df.to_csv(self.participants_file, sep="\t", index=False)
 
     def system_check(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
         """
@@ -848,16 +852,16 @@ class PsychoPhysicsExperiment:
         )
 
         # Start testing
+        results = []
         self.logger.info("Running system checks.")
-        warnings = "<Press Space to continue or Escape to quit.>\n\n"
+        results.append("<Press `Space` to accept or `Escape` to quit>")
 
-        # Test the refresh rate of the monitor
+        # Refresh rate
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
         intended_rf = int(self.monitor_params["refresh_rate"])
-
         if rf is None:
             self.logger.critical("No identical frame refresh times were found.")
-            warnings += "(✘) No identical frame refresh times. You should quit the experiment IMHO.\n\n"
+            results.append("(✘) No identical frame refresh times. You should quit the experiment IMHO.")
         else:
             # check if the measured refresh rate is the same as the one intended
             rf = np.round(rf).astype(int)
@@ -865,44 +869,46 @@ class PsychoPhysicsExperiment:
                 self.logger.warning(
                     f"The actual refresh rate {rf} does not match the intended refresh rate {intended_rf}."
                 )
-                warnings += f"(✘) The actual refresh rate {rf} does not match {intended_rf}.\n\n"
+                results.append(f"(✘) The actual refresh rate {rf} does not match {intended_rf}.")
             else:
-                warnings += "(✓) Monitor refresh rate checks out.\n\n"
+                self.logging.info(f"Monitor refresh rate checks out.")
+                results.append("(✓) Monitor refresh rate checks out.")
 
-        # Look for flagged processes
+        # Processes
         flagged = run_info['systemUserProcFlagged']
-        if len(flagged):
-            procs = "Flagged processes: "
-            warnings += "\t(✘) Flagged processes: "
-            for pr in np.unique(flagged):
-                procs += f"{pr}, "
-                warnings += f"{pr}, "
-            self.logger.warning(procs)
-            warnings += "\n\n"
+        if flagged:
+            warning = "(✘) Flagged processes:\n"
+            for proc in np.unique(flagged):
+                warning += f"\t- {proc}, "
+            self.logger.warning(warning)
+            results.append(warning)
         else:
-            warnings += "(✓) No flagged processes.\n\n"
+            self.logger.info("No flagged processes.")
+            results.append("(✓) No flagged processes.")
 
         # See if we have enough RAM
         if run_info["systemMemFreeRAM"] < ram_thresh:
             self.logger.warning(f"Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.")
-            warnings += f"(✘) Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.\n\n"
+            results.append(f"(✘) Only {round(run_info['systemMemFreeRAM'] / 1000)} GB  of RAM available.")
         else:
-            warnings += "(✓) RAM is OK.\n\n"
+            self.logger.info("RAM is OK.")
+            results.append("(✓) RAM is OK.")
 
         # Raise the priority of the experiment for CPU
         # Check if it's Mac OS X (these methods don't run on that platform)
         if self.platform_settings["OS"] in ["darwin", "Mac OS X"]:
             self.logger.warning("Cannot raise the priority because you are on Mac OS X.")
-            warnings += "(✘) Cannot raise the priority because you are on Mac OS X.\n\n"
+            results.append("(✘) Cannot raise the priority because you are on Mac OS X.")
         else:
             try:
                 Computer.setPriority("realtime", disable_gc=True)
-                warnings += "(✓) Realtime processing is set.\n\n"
+                results.append("(✓) Realtime processing is set.")
+                self.logger.info("Realtime processing is set.")
             except Exception as e:
+                results.append(f"(✘) Error in elevating processing priority: {e}.")
                 self.logger.warning(f"Error in elevating processing priority: {e}")
-                warnings += f"(✘) Error in elevating processing priority: {e}.\n\n"
 
-        return warnings
+        return results
 
     def clear_screen(self):
         """ clear up the PsychoPy window"""
@@ -933,10 +939,11 @@ class PsychoPhysicsExperiment:
         """Make a countdown stimulus"""
 
         # Make a countdown stimulus
+        params = self.stim_params["Message"]
         countdown = visual.TextStim(
             self.window,
-            font="Trebuchet MS",
-            color="black",
+            font=params["font"],
+            color=params["normal_text_color"],
             alignText='center',
             anchorHoriz='center',
             anchorVert='center',
@@ -959,6 +966,9 @@ class PsychoPhysicsExperiment:
         Returns:
             str: The key press that was made.
         """
+        # Clear the screen
+        self.clear_screen()
+
         # Change background color
         self.window.color = self.exp_params["General"]["message_background_color"]
 
@@ -966,17 +976,13 @@ class PsychoPhysicsExperiment:
         self.msg_stim.text = text
 
         # Change color based on info
+        params = self.stim_params["Message"]
         if msg_type == "info":
-            self.msg_stim.color = "black"
+            self.msg_stim.color = params["normal_text_color"]
         elif msg_type == "warning":
-            self.msg_stim.color = "red"
-        elif msg_type == "error":
-            self.msg_stim.color = "red"
-        elif msg_type == "success":
-            self.msg_stim.color = "green"
+            self.msg_stim.color = params["warning_text_color"]
 
-        # Clear the screen and show the message
-        self.clear_screen()
+        # Show the message
         self.msg_stim.draw()
         self.window.flip()
 
@@ -1072,6 +1078,9 @@ class PsychoPhysicsExperiment:
 
     @staticmethod
     def period_edge_frames(frames, period):
+        """
+        Find the start and end frames of a period in a frame array.
+        """
         modified = np.where(frames == period, 100, 0)
         start = np.argmax(modified, axis=1)
         end = np.argmax(modified[::-1], axis=1)

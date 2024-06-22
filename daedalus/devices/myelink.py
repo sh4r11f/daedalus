@@ -38,7 +38,7 @@ class MyeLink:
         tracker_name (str): The name of the tracker.
         tracker_config (dict): The configuration of the tracker.
         dummy (bool): Whether to use the dummy mode.
-        
+
     Attributes:
         exp_name (str): The name of the experiment.
         tracker_name (str): The name of the tracker.
@@ -55,29 +55,8 @@ class MyeLink:
         self.tracker_name = tracker_name
         self.params = tracker_config
         self.dummy = dummy
-
         self.eyelink = None
-        self.tracked_eye = None
-
         self.codex = Codex()
-
-    def send_code(self, event, state):
-        """
-        Send a code to the Eyelink tracker
-
-        Args:
-            event (str): The event.
-            state (str): State of the event.
-
-        Returns:
-            str: The code number.
-        """
-        code = self.codex.code(event, state)
-        msg = f"CODE_{code}"
-        self.eyelink.sendMessage(msg)
-        self.delay()
-
-        return code
 
     def delay(self, delay_time=None):
         """
@@ -90,6 +69,37 @@ class MyeLink:
             delay_time = self.params["delay_time"]
         self.eyelink.pumpDelay(delay_time)
 
+    def codex_msg(self, proc, state, delay=True):
+        """
+        Send a code to the Eyelink tracker
+
+        Args:
+            proc (str): The process.
+            state (str): The state.
+            delay (bool): Whether to delay.
+
+        Returns:
+            str: The code.
+        """
+        msg = self.codex.message(proc, state)
+        self.eyelink.sendMessage(msg)
+        if delay:
+            self.delay()
+
+        return msg
+
+    def direct_msg(self, msg, delay=True):
+        """
+        Send a message to the Eyelink tracker
+
+        Args:
+            msg (str): The message to send.
+            delay (bool): Whether to delay.
+        """
+        self.eyelink.sendMessage(msg)
+        if delay:
+            self.delay()
+
     def connect(self):
         """
         Connect to the Eyelink tracker
@@ -98,6 +108,134 @@ class MyeLink:
             self.eyelink = pylink.EyeLink(None)
         else:
             self.eyelink = pylink.EyeLink(self.params["Connection"]["ip_address"])
+
+    def configure(self, display_name):
+        """
+        Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
+        e.g., sample rate and calibration type.
+
+        Args:
+            display_name (str): The name of the display PC.
+        """
+        # Set the configuration from the config dictionary
+        for key, value in self.params["AutoConfig"].items():
+            self.eyelink.sendCommand(f"{key} = {value}")
+            self.delay()
+        self.eyelink.setName(display_name)
+        self.codex_msg("config", "done")
+
+    def go_offline(self):
+        """
+        Set the Eyelink tracker to offline mode
+        """
+        # Stop recording if it is still recording
+        if self.eyelink.isRecording():
+            self.delay()
+            self.eyelink.stopRecording()
+            self.delay()
+            self.codex_msg("rec", "stop")
+        # Set the tracker to offline mode
+        self.eyelink.setOfflineMode()
+        self.eyelink.waitForModeReady(self.params["wait_time"])
+        self.codex_msg("idle", "init")
+
+    def set_calibration_graphics(self, width, height, graphics_env):
+        """
+        Set the calibration graphics
+
+        Args:
+            graph_env: External graphics environment to use for calibration
+        """
+        # Set the display coordinates
+        self.eyelink.sendCommand(f"screen_pixel_coords = 0 0 {width - 1} {height - 1}")
+        self.delay()
+        # log the display coordinates
+        self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
+        self.delay()
+        # Set the calibration graphics
+        self.eyelink.openGraphics(graphics_env)
+        self.delay()
+
+    def send_cmd(self, cmd):
+        """
+        Send a command to the Eyelink tracker
+
+        Args:
+            cmd (str): The command to send.
+        """
+        self.eyelink.sendCommand(cmd)
+        self.delay()
+
+    def come_online(self):
+        """
+        Start recording the data
+
+        Returns:
+            str or None: The error message.
+        """
+        # Record samples and events and save to file and send over link
+        self.eyelink.startRecording(1, 1, 1, 1)
+        self.eyelink.waitForModeReady(self.params["wait_time"])
+        # Begin realtime mode
+        self.eyelink.beginRealTimeMode(self.params["wait_time"])
+        # wait for link data to arrive
+        try:
+            self.eyelink.waitForBlockstart(self.params["wait_time"], 1, 1)
+            return self.codex_msg("rec", "init")
+        except RuntimeError as err:
+            self.codex_msg("rec", "fail")
+            return err
+
+    def check_eye(self):
+        """
+        Check if the eye is being tracked
+
+        Args:
+            log (bool): Whether to log the message.
+
+        Returns:
+            str or None: The error message.
+        """
+        # Get the eye information
+        available = self.eyelink.eyeAvailable()
+        conf_intend = self.params["AutoConfig"]["active_eye"]
+        gen_intend = self.params["eye"]
+
+        # Check
+        if (
+            (available == 0 and gen_intend == 0 and conf_intend == "LEFT") or
+            (available == 1 and gen_intend == 1 and conf_intend == "RIGHT") or
+            (available == 2 and gen_intend == 2 and conf_intend == "BINOCULAR")
+        ):
+            self.eyelink.sendMessage(f"EYE_USED {available} {conf_intend}")
+            msg = self.codex_msg("eye", "good")
+        else:
+            msg = self.codex_msg("eye", "bad")
+
+        return msg
+
+    def calibrate(self):
+        """
+        Calibrate the Eyelink 1000
+
+        Returns:
+            str or None: The error message.
+        """
+        try:
+            # Start the calibration
+            self.codex_msg("calib", "init")
+            self.eyelink.doTrackerSetup()
+            self.eyelink.waitForModeReady(self.params["wait_time"])
+            err = self.eyelink.getCalibrationMessage()
+            if err == "OK_REPLY":
+                return self.codex_msg("calib", "ok")
+            else:
+                self.codex_msg("calib", "fail")
+                return err
+        except RuntimeError as err:
+            self.eyelink.exitCalibration()
+            self.codex_msg("calib", "fail")
+            return err
 
     def terminate(self, host_file, display_file):
         """
@@ -111,25 +249,23 @@ class MyeLink:
             str or None: The error message.
         """
         # Check connection
-        err = self.eyeLink.isConnected()
-        if err:
-            self.send_code("con", "fail")
-            return err
+        if not self.eyeLink.isConnected():
+            return self.codex_msg("con", "fail")
         else:
             # Send the tracker to offline mode
             self.go_offline()
-
             # Close the edf data file on the Host
             self.eyelink.closeDataFile()
             self.delay()
-
             # Download the EDF data file from the Host PC to the Display PC
             try:
                 self.eyelink.receiveDataFile(host_file, display_file)
-                self.send_code("file", "ok")
-                return None
+                msg = self.codex_msg("file", "ok")
+                self.eyelink.closeGraphics()
+                self.eyelink.close()
+                return msg
             except RuntimeError as err:
-                self.send_code("file", "fail")
+                self.codex_msg("file", "fail")
                 self.eyelink.closeGraphics()
                 self.eyelink.close()
                 return err
@@ -148,10 +284,9 @@ class MyeLink:
         if not error:
             self.eyelink.sendCommand(f"add_file_preamble_text {self.params['preamble_text']}")
             self.delay()
-            self.send_code("edf", "init")
-            return None
+            return self.codex_msg("edf", "init")
         else:
-            self.send_code("edf", "fail")
+            self.codex_msg("edf", "fail")
             return error
 
     def get_lag(self):
@@ -160,37 +295,7 @@ class MyeLink:
         """
         return self.eyelink.trackerTimeUsecOffset
 
-    def configure(self):
-        """
-        Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
-        e.g., sample rate and calibration type.
-        """
-        # Set the configuration from the config dictionary
-        for key, value in self.params["AutoConfig"].items():
-            self.eyelink.sendCommand(f"{key} = {value}")
-            self.delay()
-
-        self.send_code("config", "done")
-
-    def set_calibration_graphics(self, width, height, graphics_env):
-        """
-        Set the calibration graphics
-
-        Args:
-            graph_env: External graphics environment to use for calibration
-        """
-        # Set the display coordinates
-        self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
-        self.delay()
-        # Set the screen pixel coordinates
-        self.eyelink.sendMesage(f"screen_pixel_coords 0 0 {width - 1} {height - 1}")
-        self.delay()
-        # Set the calibration graphics
-        self.eyelink.openGraphics(graphics_env)
-        self.eyelink.sendCommand("clear_screen 0")
-        self.delay()
-
-    def time(self):
+    def get_time(self):
         """
         Get the time from the Eyelink tracker
 
@@ -207,48 +312,7 @@ class MyeLink:
         self.eyelink.flushGetkeyQueue()
         self.resetData()
         self.delay()
-        self.send_code("reset", "done")
-
-    def go_offline(self):
-        """
-        Set the Eyelink tracker to offline mode
-        """
-        # Stop recording if it is still recording
-        if self.eyelink.isRecording():
-            self.delay()
-            self.eyelink.stopRecording()
-            self.delay()
-            self.send_code("rec", "stop")
-        # Set the tracker to offline mode
-        self.eyelink.setOfflineMode()
-        self.eyelink.waitForModeReady(self.params["wait_time"])
-        # Clear screen
-        self.eyelink.sendCommand('clear_screen 0')
-        self.delay()
-        self.send_code("idle", "init")
-
-    def calibrate(self):
-        """
-        Calibrate the Eyelink 1000
-
-        Returns:
-            str or None: The error message.
-        """
-        try:
-            # Start the calibration
-            self.eyelink.doTrackerSetup()
-            self.eyelink.waitForModeReady(self.params["wait_time"])
-            err = self.eyelink.getCalibrationMessage()
-            if err == "OK_REPLY":
-                self.send_code("calib", "ok")
-                return None
-            else:
-                self.send_code("calib", "fail")
-                return err
-        except RuntimeError as err:
-            self.eyelink.exitCalibration()
-            self.send_code("calib", "fail")
-            return err
+        self.codex_msg("reset", "done")
 
     def drift_correct(self, fix_pos=None):
         """
@@ -271,11 +335,9 @@ class MyeLink:
         while True:
             # Checks
             if not self.eyelink.isConnected():
-                code = self.send_code("con", "lost")
-                return code
+                return self.codex_msg("con", "lost")
             if self.eyelink.breakPressed():
-                code = self.send_code("drift", "term")
-                return code
+                return self.codex_msg("drift", "term")
 
             # Perform drift correction
             try:
@@ -287,38 +349,15 @@ class MyeLink:
                     res = self.eyelink.getCalibrationMessage()
                     if res == "OK_REPLY":
                         self.eyelink.applyDriftCorrect()
-                        self.send_code("drift", "ok")
-                        return None
+                        return self.codex_msg("drift", "ok")
                     else:
-                        self.send_code("calib", "fail")
+                        self.codex_msg("drift", "fail")
                         return res
                 else:
-                    self.send_code("drift", "term")
-                    return err
+                    return self.codex_msg("drift", "term")
             except RuntimeError as err:
-                self.send_code("drift", "fail")
+                self.codex_msg("drift", "fail")
                 return err
-
-    def come_online(self):
-        """
-        Start recording the data
-
-        Returns:
-            str or None: The error message.
-        """
-        # Record samples and events and save to file and send over link
-        self.eyelink.startRecording(1, 1, 1, 1)
-        self.eyelink.waitForModeReady(self.params["wait_time"])
-        # Begin realtime mode
-        self.eyelink.beginRealTimeMode(self.params["wait_time"])
-        # wait for link data to arrive
-        try:
-            self.eyelink.waitForBlockstart(self.params["wait_time"], 1, 1)
-            self.send_code("rec", "init")
-            return None
-        except RuntimeError as err:
-            self.send_code("rec", "fail")
-            return err
 
     def check_sample_rate(self):
         """
@@ -330,39 +369,10 @@ class MyeLink:
         tracker_rate = self.eyelink.getSampleRate()
         intended_rate = self.params["sample_rate"]
         if tracker_rate == intended_rate:
-            self.send_code("rate", "good")
-            return None
+            status = self.codex_msg("rate", "good")
         else:
-            code = self.send_code("rate", "bad")
-            return code
-
-    def check_eye(self):
-        """
-        Check if the eye is being tracked
-
-        Args:
-            log (bool): Whether to log the message.
-
-        Returns:
-            str or None: The error message.
-        """
-        # Get the eye information
-        available = self.eyelink.eyeAvailable()
-        self.eyelink.sendMessage(f"EYE_{available}")
-        intended = self.params["AutoConfig"]["active_eye"]
-
-        # Check
-        if (
-            (available == 0 and intended == "LEFT") or
-            (available == 1 and intended == "RIGHT") or
-            (available == 2 and intended == "BINOCULAR")
-        ):
-            self.tracked_eye = intended
-            self.send_code("eye", "good")
-            return None
-        else:
-            code = self.send_code("eye", "bad")
-            return code
+            status = self.codex_msg("rate", "bad")
+        return status
 
     def get_correct_eye_data(self, sample):
         """
@@ -374,14 +384,70 @@ class MyeLink:
         Returns:
             pylink.EyeData or None: The eye data.
         """
-        if self.tracked_eye == "LEFT" and sample.isLeftSample():
+        if self.params["eye"] == 0 and sample.isLeftSample():
             data = sample.getLeftEye()
-        elif self.tracked_eye == "RIGHT" and sample.isRightSample():
+        elif self.params["eye"] == 1 and sample.isRightSample():
             data = sample.getRightEye()
         else:
             data = None
-
         return data
+
+    def process_samples_online(self):
+        """
+        Process samples for each event in the link buffer (typically called at the end of each trial)
+
+        Returns:
+            list: A list of dictionaries containing the processed sample data.
+        """
+        # Initialize the information
+        info = []
+        prev_sample = None
+
+        # Go through the samples in the buffer
+        while True:
+
+            # Checks
+            if not self.eyelink.isConnected():
+                return self.codex_msg("con", "lost", delay=False)
+            if self.eyelink.breakPressed():
+                return self.codex_msg("con", "term", delay=False)
+
+            # Read the buffer
+            item_type = self.eyelink.getNextData()
+            if not item_type:
+                break
+
+            # Process the sample data
+            if item_type == pylink.SAMPLE_TYPE:
+                sample = self.eyelink.getFloatData()
+                if prev_sample is None or sample.getTime() != prev_sample.getTime():
+                    prev_sample = sample
+                    info = self._process_sample(sample)
+
+        return info
+
+    def _process_sample(self, sample):
+        """
+        Process the fixation start event
+        """
+        # Process the general data
+        time = sample.getTime()
+        ppd_x, ppd_y = sample.getPPD()
+
+        # Process the eye data
+        eye_data = self.get_correct_eye_data(sample)
+        if eye_data is not None:
+            gaze_x, gaze_y = eye_data.getGaze()
+            pupil_size = eye_data.getPupilSize()
+
+        return {
+            "time": time,
+            "gaze_x": gaze_x,
+            "gaze_y": gaze_y,
+            "ppd_x": ppd_x,
+            "ppd_y": ppd_y,
+            "pupil_size": pupil_size
+        }
 
     def process_events_online(self, events_of_interest: dict = None):
         """
@@ -409,11 +475,9 @@ class MyeLink:
         while True:
             # Check
             if not self.eyelink.isConnected():
-                code = self.send_code("con", "lost")
-                return code
+                return self.codex_msg("con", "lost", delay=False)
             if self.eyelink.breakPressed():
-                code = self.send_code("con", "term")
-                return code
+                return self.codex_msg("con", "term", delay=False)
 
             # Get the event type
             item_type = self.eyelink.getNextData()
@@ -421,10 +485,10 @@ class MyeLink:
                 break
 
             # Get the event data for the tracked eye
-            if item_type in events_of_interest.values():
+            if (item_type is not None) and (item_type in events_of_interest.values()):
                 event_name = [key for key, value in events_of_interest.items() if value == item_type][0]
                 data = self.eyelink.getFloatData()
-                if data.getEye() == self.tracked_eye:
+                if data.getEye() == self.params["eye"]:
                     if event_name == "fixation_start":
                         func = self.detect_fixation_start_event
                     elif event_name == "fixation_update":
@@ -435,66 +499,11 @@ class MyeLink:
                         func = self.process_fixation_end_event
                     elif event_name == "saccade_end":
                         func = self.process_saccade_end_event
-                    # Process the event data
+
+                    # Detect/process the event data
                     info[event_name].append(func(data))
 
         return info
-
-    def process_samples_online(self):
-        """
-        Process samples for each event in the link buffer (typically called at the end of each trial)
-
-        Returns:
-            list: A list of dictionaries containing the processed sample data.
-        """
-        # Initialize the information
-        info = []
-        prev_sample = None
-
-        # Go through the samples in the buffer
-        while True:
-            # Check
-            if not self.eyelink.isConnected():
-                code = self.send_code("con", "lost")
-                return code
-            if self.eyelink.breakPressed():
-                code = self.send_code("con", "term")
-                return code
-
-            # Read the buffer
-            item_type = self.eyelink.getNextData()
-            if not item_type:
-                break
-
-            # Process the sample data
-            if item_type == pylink.SAMPLE_TYPE:
-                sample = self.eyelink.getFloatData()
-                if prev_sample is None or sample.getTime() != prev_sample.getTime():
-                    prev_sample = sample
-                    info = self.process_sample(sample)
-
-        return info
-
-    def process_sample(self, sample):
-        """
-        Process the fixation start event
-        """
-        time = sample.getTime()
-        ppd_x, ppd_y = sample.getPPD()
-
-        eye_data = self.get_correct_eye_data(sample)
-        if eye_data is not None:
-            gaze_x, gaze_y = eye_data.getGaze()
-            pupil_size = eye_data.getPupilSize()
-
-        return {
-            "time": time,
-            "gaze_x": gaze_x,
-            "gaze_y": gaze_y,
-            "ppd_x": ppd_x,
-            "ppd_y": ppd_y,
-            "pupil_size": pupil_size
-        }
 
     def detect_fixation_start_event(self, data):
         """
@@ -776,7 +785,7 @@ class MyeLink:
                 # currently being tracked; if so, we retrieve the current
                 # gaze position and PPD (how many pixels correspond to 1
                 # deg of visual angle, at the current gaze position)
-                gaze_x, gaze_y = self.get_eye_gaze_pos(self.tracked_eye, current_sample)
+                gaze_x, gaze_y = self.get_eye_gaze_pos(self.params["eye"], current_sample)
                 if (gaze_x is not None) and (gaze_y is not None):
                     # See if the current gaze position is in a region around the screen centered
                     offset = get_hypot(target_x, target_y, gaze_x, gaze_y)

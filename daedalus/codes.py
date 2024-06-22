@@ -17,6 +17,9 @@
 #                       SPACE: Dartmouth College, Hanover, NH
 #
 # ======================================================================================== #
+from math import modf
+
+
 class Codex:
 
     def __init__(self):
@@ -31,7 +34,8 @@ class Codex:
             "idle": 7,
             "drift": 8,
             "rate": 9,
-            "eye": 30,
+            "tracker": 30,
+            "eye": 31,
 
             "exp": 10,
             "ses": 11,
@@ -41,8 +45,10 @@ class Codex:
             "stim": 15,
             "resp": 16,
             "fb": 17,
-
+            "cue": 18,
+            "view": 19,
             "sys": 20,
+            "iti": 21,
         }
         self.state_codes = {
             "init": 0.0,
@@ -58,6 +64,9 @@ class Codex:
             "rep": 0.01,
             "maxout": 0.02,
             "done": 0.03,
+            "onset": 0.04,
+            "offset": 0.05,
+            "per": 0.06,
         }
         self.proc_names = {
             "con": "CONNECTION",
@@ -68,6 +77,9 @@ class Codex:
             "reset": "RESET",
             "idle": "IDLE",
             "drift": "DRIFT_CORRECTION",
+            "rate": "RATE",
+            "tracker": "TRACKER",
+            "eye": "EYE",
             "exp": "EXPERIMENT",
             "ses": "SESSION",
             "block": "BLOCK",
@@ -76,7 +88,10 @@ class Codex:
             "stim": "STIMULUS",
             "resp": "RESPONSE",
             "fb": "FEEDBACK",
-            "sys": "SYSTEM"
+            "cue": "CUE",
+            "view": "VIEW",
+            "sys": "SYSTEM",
+            "iti": "INTER_TRIAL_INTERVAL",
         }
         self.state_names = {
             "init": "START",
@@ -91,7 +106,10 @@ class Codex:
             "timeout": "TIMEOUT",
             "rep": "REPEAT",
             "maxout": "MAXED_OUT",
-            "done": "DONE"
+            "done": "DONE",
+            "onset": "ONSET",
+            "offset": "OFFSET",
+            "period": "PERIOD",
         }
 
     def code(self, proc, state):
@@ -113,10 +131,35 @@ class Codex:
         return f"{self.proc_names[proc]}_{self.state_names[state]}"
 
     def code2msg(self, code):
+        """
+        Convert a code to a message
 
-        code_proc = code // 10
-        code_state = code % 10
+        Args:
+            code (float): The code to convert
+
+        Returns:
+            str: The message corresponding to the code
+        """
+        code_proc, code_state = modf(code)
+        code_proc = int(code_proc)
         proc = [k for k, v in self.proc_codes.items() if v == code_proc][0]
         state = [k for k, v in self.state_codes.items() if v == code_state][0]
 
         return self.message(proc, state)
+
+    def get_proc_name(self, code):
+        """
+        Get the process name from a code
+
+        Args:
+            code (float): The code to convert
+
+        Returns:
+            str: The process name corresponding to the code
+        """
+        code_proc, code_state = modf(code)
+        code_proc = int(code_proc)
+        proc_key = [k for k, v in self.proc_codes.items() if v == code_proc][0]
+        proc_name = self.proc_names[proc_key].lower().capitalize()
+
+        return proc_name
