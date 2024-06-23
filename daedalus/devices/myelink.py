@@ -67,7 +67,18 @@ class MyeLink:
         """
         if delay_time is None:
             delay_time = self.params["delay_time"]
-        self.eyelink.pumpDelay(delay_time)
+        pylink.pumpDelay(delay_time)
+
+    def short_delay(self, time=None):
+        """
+        Short delay for the Eyelink tracker
+
+        Args:
+            time (float): The delay time.
+        """
+        if time is None:
+            time = self.params["short_delay"]
+        self.eyelink.msecDelay(time)
 
     def codex_msg(self, proc, state, delay=True):
         """
@@ -147,13 +158,11 @@ class MyeLink:
             graph_env: External graphics environment to use for calibration
         """
         # Set the display coordinates
-        self.eyelink.sendCommand(f"screen_pixel_coords = 0 0 {width - 1} {height - 1}")
-        self.delay()
+        self.send_cmd(f"screen_pixel_coords = 0 0 {width - 1} {height - 1}")
         # log the display coordinates
-        self.eyelink.sendMesage(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
-        self.delay()
+        self.direct_msg(f"DISPLAY_COORDS 0 0 {width - 1} {height - 1}")
         # Set the calibration graphics
-        self.eyelink.openGraphics(graphics_env)
+        pylink.openGraphicsEx(graphics_env)
         self.delay()
 
     def send_cmd(self, cmd):
@@ -176,16 +185,21 @@ class MyeLink:
         # Record samples and events and save to file and send over link
         self.eyelink.startRecording(1, 1, 1, 1)
         self.eyelink.waitForModeReady(self.params["wait_time"])
-        # Begin realtime mode
-        self.eyelink.beginRealTimeMode(self.params["wait_time"])
-        self.eyelink.waitForModeReady(self.params["wait_time"])
+        pylink.beginRealTimeMode(self.params["wait_time"])
         # wait for link data to arrive
         try:
-            self.eyelink.waitForBlockstart(self.params["wait_time"], 1, 1)
+            self.eyelink.waitForBlockStart(self.params["wait_time"], 1, 1)
             return self.codex_msg("rec", "init")
         except RuntimeError as err:
             self.codex_msg("rec", "fail")
             return err
+
+    def end_realtime(self):
+        """
+        End realtime mode
+        """
+        pylink.endRealTimeMode()
+        self.delay()
 
     def check_eye(self):
         """

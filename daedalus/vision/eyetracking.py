@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from .psyphy import PsychoPhysicsExperiment, PsychoPhysicsDatabase
-from daedalus.data.database import EyeTrackingEvent, EyeTrackingSample
+# from daedalus.data.database import EyeTrackingEvent, EyeTrackingSample
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
 
@@ -55,7 +55,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         # Tracker
         self.tracker_model = tracker_model
-        self.tracker_params = utils.load_config(self.files["eyetrackers_params"])[self.tracker_model]
+        self.tracker_params = None
         self.tracker = None
 
         # Files
@@ -70,18 +70,14 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.edf_display_file = None
         self.edf_host_file = None
 
-        # Monitoring parameters
-        self.fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"])
-        fixation_check_frequency = self.exp_params["General"]["fixation_check_frequency"]
-        self.fix_check_interval = self.ms2fr(1000 / fixation_check_frequency)
-        self.sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"])
-
     def init_tracker(self):
         """
         Initialize the eye tracker.
         """
         # Connect to the eye tracker
-        self.tracker = MyeLink(self.name, self.tracker_params, self.debug)
+        conf_file = self.root / "config" / "eyetrackers.yaml"
+        self.tracker_params = utils.read_config(conf_file)[self.tracker_model]
+        self.tracker = MyeLink(self.name, self.tracker_model, self.tracker_params, self.debug)
         self.tracker.connect()
         self.tracker.configure(display_name=self.platform)
 
@@ -271,6 +267,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.direct_msg("!V CLEAR 128 128 128")
 
         # Stop recording
+        self.tracker.end_realtime()
         self.tracker.go_offline()
         self.tracker.reset()
 
@@ -281,6 +278,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.codex_msg("trial", "stop")
         self.tracker.direct_msg(f"TRIAL_RESULT {pylink.REPEAT_TRIAL}")
         self.tracker.eyelink.terminalBreak(1)
+        self.tracker.end_realtime()
         self.tracker.go_offline()
         self.tracker.reset()
         super().stop_trial()
@@ -421,7 +419,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         # Eye tracking experiments always use pixel measurements.
         self.window.units = 'pix'
         # NOTE: If we don't do this early, the eyetracker will override it and we always get a grey background.
-        self.window.color = self.exp_params["General"]["background_color"]
+        self.window.color = self.stim_params["Display"]["background_color"]
 
         # Configure a graphics environment (genv) for tracker calibration
         genv = EyeLinkCoreGraphicsPsychoPy(self.tracker, self.window)
@@ -434,12 +432,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         # Set up the calibration target
         genv.setTargetType('circle')
         genv.setTargetSize(
-            (self.tracker_params["Calibration"]["target_size"], self.tracker_params["Calibration"]["hole_size"])
+            (self.tracker_params["Calibration"]["target_size"],
+             self.tracker_params["Calibration"]["hole_size"])
         )
 
         # Set up the calibration sounds
         genv.setCalibrationSounds("", "", "")
-        genv.setDriftCorrectSounds("", "", "")
 
         return genv
 
@@ -532,6 +530,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             bool: Whether the fixation is established or not.
         """
         fix_event = {"fixation_start": pylink.STARTFIX}
+        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"])
         if fix is None:
             fix = self.fix_stim
         start_time = self.trial_clock.getTime()
@@ -558,9 +557,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 gaze_y = event["gaze_start_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
-                    valid = self.gaze_in_circle((gx, gy), fix.pos, self.fix_radi)
+                    valid = self.gaze_in_circle((gx, gy), fix.pos, fix_radi)
                 elif method == "square":
-                    valid = self.gaze_in_square((gx, gy), fix.pos, self.fix_radi)
+                    valid = self.gaze_in_square((gx, gy), fix.pos, fix_radi)
                 else:
                     raise NotImplementedError("Only circle and square methods are implemented.")
                 fixations.append(valid)
@@ -588,6 +587,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is established or not.
         """
+        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"])
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
         events = self.tracker.process_events_online(fix_events)
 
@@ -611,9 +611,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 gaze_y = event["gaze_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
-                    check = self.gaze_in_circle((gx, gy), fix_pos, self.fix_radi)
+                    check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
                 elif method == "square":
-                    check = self.gaze_in_square((gx, gy), fix_pos, self.fix_radi)
+                    check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
                 else:
                     raise NotImplementedError("Method is not implemented.")
                 updates.append(check)
@@ -652,10 +652,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             return events, None
 
         # Check if the fixated and if it is valid
+        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"])
         if fix_pos is None:
             fix_pos = self.fix_stim.pos
         updates = []
         landings = []
+        sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"])
         sacc = False
         for event in events:
             if event["event_type"] == "fixation_update":
@@ -663,9 +665,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 gaze_y = event["gaze_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if fix_method == "circle":
-                    check = self.gaze_in_circle((gx, gy), fix_pos, self.fix_radi)
+                    check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
                 elif fix_method == "square":
-                    check = self.gaze_in_square((gx, gy), fix_pos, self.fix_radi)
+                    check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
                 else:
                     raise NotImplementedError("Method is not implemented.")
                 updates.append(check)
@@ -677,7 +679,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 gp = self.mat2cart(gaze_x, gaze_y)
                 # check if close to target(s)
                 for tp in targets_pos:
-                    check = self.gaze_in_circle(gp, tp, self.sacc_radi)
+                    check = self.gaze_in_circle(gp, tp, sacc_radi)
                     landings.append(check)
 
         # Check if saccade is valid

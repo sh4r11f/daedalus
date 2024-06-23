@@ -26,21 +26,22 @@ from emoji import emojize
 import numpy as np
 import pandas as pd
 
-from psychopy import core, monitors, visual, event, info, gui
+from psychopy import core, monitors, visual, event, info
+import psychopy.gui.qtgui as gui
 from psychopy.iohub.devices import Computer
 
 import logging
 from daedalus import log_handler, utils, codes
 
-from sqlalchemy import create_engine
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
-from daedalus.data.database import (
-    Base, Experiment, Author, ExperimentAuthor, Directory, File,
-    Subject, SubjectSession, Task, TaskParameter,
-    Block, Trial, Stimulus, StimulusProperty,
-    BehavioralResponse
-)
+# from sqlalchemy import create_engine
+# from sqlalchemy.exc import IntegrityError
+# from sqlalchemy.orm import sessionmaker
+# from daedalus.data.database import (
+#     Base, Experiment, Author, ExperimentAuthor, Directory, File,
+#     Subject, SubjectSession, Task, TaskParameter,
+#     Block, Trial, Stimulus, StimulusProperty,
+#     BehavioralResponse
+# )
 
 
 class PsychoPhysicsExperiment:
@@ -125,32 +126,35 @@ class PsychoPhysicsExperiment:
         self.trial_clock = None
 
         # Stimuli
-        self.msg_stim = self.make_msg_stim()
+        self.msg_stim = None
 
     def init_session(self):
         """
+        Starts up the experiment by initializing the settings, directories, files, logging, monitor, window, and clocks.
         """
         # Initialize the settings and parameters
         self.init_configs()
 
         # Ask for subject information
-        hello = self.hello_gui()
-        if hello["selection"] == "Load":
+        select, expert = self.hello_gui()
+        if select == "Load":
             sub_info = self.subject_loadation_gui()
         else:
             sub_info = self.subject_registration_gui()
-        self.sub_id = self._fix_id(sub_info["PID"])
 
-        # Session info
-        ses_info = self.session_task_selection_gui()
-        self.ses_id = self._fix_id(ses_info["ses_id"])
-        # self.task_name = ses_info["task"]
+        # Session and task info
+        ses, task = self.session_task_selection_gui(sub_info)
 
-        # Add extra info and save
-        sub_info["Experimenter"] = hello["experimenter"]
-        sub_info["Session"] = self.ses_id
-        sub_info["Task"] = self.task_name
-        self.add_to_participants(sub_info)
+        # Save the information
+        sub_info["PID"] = self._fix_id(sub_info["PID"].values[0])
+        sub_info["Session"] = ses
+        sub_info["Task"] = task
+        sub_info["Experimenter"] = expert
+        sub_info["Experiment"] = self.name
+        sub_info["Version"] = self.version
+        self.sub_id = sub_info["PID"].values[0]
+        self.ses_id = self._fix_id(ses)
+        self.update_participants(sub_info)
 
         # Setup the directories and files
         self.init_dirs()
@@ -160,7 +164,7 @@ class PsychoPhysicsExperiment:
         self.init_logging()
 
         # Start the database
-        self.init_database()
+        # self.init_database()
 
         # Make monitor and window
         self.init_display()
@@ -169,6 +173,9 @@ class PsychoPhysicsExperiment:
         self.global_clock = core.Clock()
         self.block_clock = core.Clock()
         self.trial_clock = core.MonotonicClock()
+
+        # Stimuli
+        self.make_msg_stim()
 
         # First log
         self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
@@ -414,7 +421,7 @@ class PsychoPhysicsExperiment:
 
         # Set the level of the handlers
         if self.debug:
-            log_handler.set_handlers_level(self.logger.StreamHandler, logging.DEBUG)
+            log_handler.set_handlers_level(self.logger, logging.StreamHandler, logging.DEBUG)
 
     def log_info(self, msg):
         """
@@ -463,10 +470,12 @@ class PsychoPhysicsExperiment:
             str: The fixed ID.
         """
         if isinstance(id_, int):
-            fixed = f"{id_:02d}"
+            id_ = f"{id_:02d}"
         elif isinstance(id_, str) and len(id_) == 1:
-            fixed = f"0{id_}"
-        return fixed
+            id_ = f"0{id_}"
+        elif isinstance(id_, list):
+            self._fix_id(id_[0])
+        return id_
 
     def _get_ses_tasks(self):
         """
@@ -593,7 +602,7 @@ class PsychoPhysicsExperiment:
             monitor.setSizePix(self.monitor_params["size_pix"])
 
             # Gamma correction
-            gamma_file = self.directories["config"] / f"{self.monitor_params}_gamma_grid.npy"
+            gamma_file = self.root / "config" / f"{name}_gamma_grid.npy"
             try:
                 grid = np.load(str(gamma_file))
                 monitor.setLineariseMethod(1)  # (a + b**xx)**gamma
@@ -649,33 +658,51 @@ class PsychoPhysicsExperiment:
         Raises:
             ValueError: If the experiment is cancelled.
         """
+        emos = self.stim_params["Emojis"]
         dlg = gui.Dlg(
-            title="Welcome!",
-            labelButtonOK=emojize(":OK_button:"),
-            labelButtonCancel="Away with you",
+            title="Yo!",
+            font=self.stim_params["Display"]["gui_font"],
+            font_size=self.stim_params["Display"]["gui_font_size"],
+            size=int(self.stim_params["Display"]["gui_size"]),
+            labelButtonOK=emojize(f"Let's Go {emos['lets_go']}"),
+            labelButtonCancel=emojize(f"Go Away {emos['go_away']}"),
             alwaysOnTop=True
         )
         # Add the experiment info
-        dlg.addText("Experiment", color=self.exp_params["General"]["gui_text_color"])
-        dlg.addFixedField(key="title", label="Title", value=self.name)
-        dlg.addFixedField(key="date", label="Date", value=self.today)
-        dlg.addFixedField(key="version", label="Version", value=self.version)
-        dlg.addFixedField(key="debug", label="Debug Mode", value="On" if self.debug else "Off")
+        dlg.addText("Experiment", color=self.stim_params["Display"]["gui_text_color"])
+        dlg.addFixedField(key="title", label=emojize(f"{emos['title']}Title"), initial=emojize(f"{self.name}"))
+        dlg.addFixedField(key="date", label=emojize(f"{emos['date']}Date"), initial=self.today)
+        dlg.addFixedField(key="version", label=emojize(f"{emos['version']}Version"), initial=self.version)
+        dlg.addFixedField(
+            key="debug",
+            label=emojize(f"{emos['debug']} Debug Mode"),
+            # initial=emojize("On :check_box_with_check:") if self.debug else emojize("Off :cross_mark:")
+            initial="On" if self.debug else "Off"
+        )
 
         # Participant and experimenter
-        dlg.addText("Who are you?", color=self.exp_params["General"]["gui_text_color"])
-        dlg.addField(
-            key="experimenter",
-            value="Experimenter",
-            choices=[a["name"] for a in self.settings["Study"]["Authors"]]
+        dlg.addText(
+            emojize("Who are you?"),
+            color=self.stim_params["Display"]["gui_text_color"]
         )
-        dlg.addField(key="selection", label="Participant", choices=[emojize(":NEW_button:"), "Load"])
+        field = "experimenter"
+        dlg.addField(
+            key=field,
+            label=emojize(f"{emos[field]} {field.capitalize()}"),
+            choices=[emojize(a["name"]) for a in self.settings["Study"]["Authors"]]
+        )
+        dlg.addField(
+            key="selection",
+            label=emojize(f"{emos['participant']} Participant"),
+            # choices=[emojize("Register :registered:"), emojize("Load :up_arrow:")]
+            choices=[emojize("Register"), emojize("Load")]
+        )
 
         info = dlg.show()
         if dlg.OK:
-            return info
+            return info["selection"], info["experimenter"]
         else:
-            raise ValueError("Experiment cancelled.")
+            raise SystemExit("Experiment cancelled.")
 
     def subject_registration_gui(self):
         """
@@ -688,41 +715,57 @@ class PsychoPhysicsExperiment:
             ValueError: If the registration is cancelled.
         """
         # Setup GUI
+        emos = self.stim_params["Emojis"]
         dlg = gui.Dlg(
             title=f"{self.name} Experiment",
-            labelButtonOK="Register",
-            labelButtonCancel="Go Away",
+            font=self.stim_params["Display"]["gui_font"],
+            font_size=self.stim_params["Display"]["gui_font_size"],
+            size=self.stim_params["Display"]["gui_size"],
+            labelButtonOK=emojize(f"Register {emos['register']}"),
+            labelButtonCancel=emojize(f"Go Away {emos['go_away']}"),
             alwaysOnTop=True
         )
 
         # Check what PIDs are already used
-        dlg.addText("Participant", color=self.stim_params["Display"]["gui_text_color"])
-        pids = [f"{id:02d}" for id in range(1, int(self.exp_params["Subjects"]["number"]) + 1)]
+        dlg.addText(
+            emojize(f"{emos['participant']} Participant"),
+            color=self.stim_params["Display"]["gui_text_color"]
+        )
+        min_pid, max_pid = self.exp_params["Subjects"]["PID"].split("-")
+        pids = [f"{i:02d}" for i in range(int(min_pid), int(max_pid) + 1)]
         burnt_pids = self.load_participants_file()["PID"].values
         available_pids = [pid for pid in pids if pid not in burnt_pids]
 
         # Add fields
-        dlg.addField(key="subj_id", label=emojize(":ID_button:"), choices=available_pids)
-        required_info = self.exp_params["Subjects"]["info"]
-        for field in required_info:
-            if isinstance(required_info[field], list):
-                dlg.addField(key=field, label=field,  choices=required_info[field])
-            elif isinstance(required_info[field], str):
-                if "-" in required_info[field]:
-                    min_, max_ = required_info[field].split("-")
-                    dlg.addField(key=field, label=field, choices=list(range(int(min_), int(max_)+1)))
-            else:
+        dlg.addField(key="PID", label=emojize(f"{emos['pid']} PID"), choices=available_pids)
+        required_info = self.exp_params["Subjects"]
+        for field, value in required_info.items():
+            field_key = field.replace(" ", "")
+            em_key = field.replace(" ", "_").lower()
+            if isinstance(value, list):
+                dlg.addField(key=field_key, label=emojize(f"{emos[em_key]} {field}"), choices=value)
+            elif isinstance(value, str):
                 if field != "PID":
-                    dlg.addField(key=field, label=field)
-                else:
-                    pass
+                    if "-" in value:
+                        min_, max_ = value.split("-")
+                        range_vals = np.arange(int(min_), int(max_)+1).tolist()
+                        dlg.addField(key=field_key, label=emojize(f"{emos[em_key]} {field}"), choices=range_vals)
+                    else:
+                        dlg.addField(key=field_key, label=emojize(f"{emos[em_key]} {field}"), initial=value)
 
         # Show the dialog
         info = dlg.show()
         if dlg.OK:
-            return info
+            # modify the info to be a DataFrame
+            sub_info = {k: [v] for k, v in info.items()}
+            # add extra keys from participants file
+            pdf = self.load_participants_file()
+            for key in pdf.columns:
+                if key not in sub_info.keys():
+                    sub_info[key] = [None]
+            return pd.DataFrame.from_dict(sub_info, orient="columns")
         else:
-            raise ValueError("Subject registration cancelled.")
+            raise SystemExit("Subject registration cancelled.")
 
     def subject_loadation_gui(self):
         """
@@ -735,35 +778,45 @@ class PsychoPhysicsExperiment:
             ValueError: If the loadation is cancelled.
         """
         # Make the dialog
+        emos = self.stim_params["Emojis"]
         dlg = gui.Dlg(
             title="Participant Loadation",
-            labelButtonOK="Load",
-            labelButtonCancel="Go Away",
+            font=self.stim_params["Display"]["gui_font"],
+            font_size=self.stim_params["Display"]["gui_font_size"],
+            size=self.stim_params["Display"]["gui_size"],
+            labelButtonOK=emojize(f"Load {emos['load']}"),
+            labelButtonCancel=emojize(f"Go Away {emos['go_away']}"),
             alwaysOnTop=True
         )
 
         # Find the PID and initials that are registered
-        dlg.addText("Participant", color=self.stim_params["Display"]["gui_text_color"])
+        dlg.addText(
+            emojize(f"{emos['participant']} Participant"),
+            color=self.stim_params["Display"]["gui_text_color"]
+        )
         df = self.load_participants_file()
         pids = df["PID"].values
         initials = df["Initials"].values
         pid_initials = [f"{pid} ({initial})" for pid, initial in zip(pids, initials)]
-        dlg.addField(key="PID", label="ID (Initials)", choices=pid_initials)
+        dlg.addField(key="sub", label=emojize(f"{emos['pid']} PID (Initials)"), choices=pid_initials)
 
         # Show the dialog
         info = dlg.show()
         if dlg.OK:
             # Load the subject info
-            choice = info["PID"]
+            choice = info["sub"]
             pid = choice.split(" ")[0]
-            initials = choice.split(" ")[1][1:-1]
-            return {"PID": pid, "Initials": initials}
+            info = df.loc[df["PID"] == pid, :]
+            return info
         else:
-            raise ValueError("Subject loadation cancelled.")
+            raise SystemExit("Subject loadation cancelled.")
 
-    def session_task_selection_gui(self):
+    def session_task_selection_gui(self, sub_df):
         """
         GUI for choosing the session.
+
+        Args:
+            sub_df (DataFrame): The subject information.
 
         Returns:
             int: The session number.
@@ -772,39 +825,59 @@ class PsychoPhysicsExperiment:
             ValueError: If the session selection is cancelled.
         """
         # Make the dialog
+        emos = self.stim_params["Emojis"]
         dlg = gui.Dlg(
             title=f"{self.name} Experiment",
-            labelButtonOK="Alright",
-            labelButtonCancel="Go Away",
+            font=self.stim_params["Display"]["gui_font"],
+            font_size=self.stim_params["Display"]["gui_font_size"],
+            size=self.stim_params["Display"]["gui_size"],
+            labelButtonOK=emojize(f"Alright {emos['alright']}"),
+            labelButtonCancel=emojize(f"Go Away {emos['go_away']}"),
             alwaysOnTop=True
         )
         # Add the subject info
-        dlg.addText("Participant Information", color=self.stim_params["Display"]["gui_text_color"])
-        valid_info_fields = ["PID"] + list(self.exp_params["Subjecs"]["info"].keys())
-        sub_info = self.load_subject_info()
-        for field in sub_info.columns:
-            if field in valid_info_fields:
-                dlg.addFixedField(key=field, label=field, value=sub_info[field].values[0])
+        dlg.addText(
+            emojize(f"{emos['participant']} Participant Information"),
+            color=self.stim_params["Display"]["gui_text_color"]
+        )
+        for field in sub_df.columns:
+            for valid in self.exp_params["Subjects"].keys():
+                valid_key = valid.replace(" ", "")
+                valid_emo = valid.lower().replace(" ", "_")
+                if field == valid_key:
+                    dlg.addFixedField(
+                        key=valid_key,
+                        label=emojize(f"{emos[valid_emo]} {field}"),
+                        initial=sub_df[field].values[0]
+                    )
 
         # Add sessions and tasks that are available
-        dlg.addText("Session and Task", color=self.stim_params["Display"]["gui_text_color"])
-        comp = sub_info.loc[~(pd.isnull(sub_info["Completed"])), ["Session", "Task"]]
+        complete = sub_df.loc[~(pd.isnull(sub_df["Completed"])), ["Session", "Task"]]
+        choices = []
         for ses in self.exp_params["Sessions"]:
-            if ses["id"] not in comp["Session"].values:
-                dlg.addField(key=f"ses_{ses['id']}", label=f"Session {ses['id']}", choices=ses["tasks"])
+            if ses["id"] not in complete["Session"].values:
+                for task in ses["tasks"]:
+                    choices.append(f"{ses['id']} ({task})")
             else:
-                burnt_tasks = comp.loc[comp["Session"] == ses["id"], "Task"].values
+                burnt_tasks = complete.loc[complete["Session"] == ses["id"], "Task"].values
                 available_tasks = [task for task in ses["tasks"] if task not in burnt_tasks]
-                dlg.addField(key=f"ses_{ses['id']}", label=f"Session {ses['id']}", choices=available_tasks)
+                for task in available_tasks:
+                    choices.append(f"{ses['id']} ({task})")
+        dlg.addField(
+            key="choice",
+            label=emojize(f"{emos['session']} Session (Task)"),
+            choices=choices,
+        )
 
         # Show the dialog
         info = dlg.show()
         if dlg.OK:
-            ses = [key.split("_")[1] for key in info.keys() if "ses" in key][0]
-            task = info[f"ses_{ses}"]
-            return {"ses": ses, "task": task}
+            ses, task = info["choice"].split(" ")
+            ses = self._fix_id(ses)
+            task = task[1:-1]
+            return ses, task
         else:
-            raise ValueError("Session selection cancelled.")
+            raise SystemExit("Session selection cancelled.")
 
     def load_subject_info(self):
         """
@@ -829,18 +902,25 @@ class PsychoPhysicsExperiment:
         Returns:
             pd.DataFrame: The participants file as a pandas DataFrame.
         """
+        if self.participants_file is None:
+            data_dir = self.root / "data"
+            if not data_dir.exists():
+                data_dir.mkdir(parents=True, exist_ok=True)
+            self.participants_file = data_dir / "participants.tsv"
+            if not self.participants_file.exists():
+                self._init_part_file()
         return pd.read_csv(self.participants_file, sep="\t")
 
-    def _init_participants_file(self):
+    def _init_part_file(self):
         """
         Initializes the participants file.
         """
-        columns = ["PID", "Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
-        columns += list(self.exp_params["Subjects"]["info"].keys())
+        columns = ["Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
+        columns += [k.replace(" ", "") for k in self.exp_params["Subjects"].keys()]
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.participants_file, sep="\t", index=False)
 
-    def add_to_participants(self, sub_info):
+    def update_participants(self, sub_info):
         """
         Saves the subject info to the participants file.
 
@@ -848,17 +928,33 @@ class PsychoPhysicsExperiment:
             subject_info (dict or DataFrame): The subject info as a dictionary.
         """
         if isinstance(sub_info, dict):
-            sub_df = pd.DataFrame.from_dict(sub_info, orient="columns")
+            info = {k: [v] for k, v in sub_info.items()}
+            sub_df = pd.DataFrame.from_dict(info, orient="columns")
         else:
             sub_df = sub_info
 
-        df = self.load_participants_file()
-        existing_pids = df["PID"].unique()
-        if self.sub_id not in existing_pids:
-            # new subject
-            df = pd.concat([df, sub_df], ignore_index=True)
+        pdf = self.load_participants_file()
+        duplicate = pdf.loc[
+            (pdf["PID"] == self.sub_id) & (pdf["Session"] == self.ses_id) & (pdf["Task"] == self.task_name)
+        ]
+        if duplicate.shape[0] == 0:
+            print(pdf)
+            print(sub_df)
+            df = pd.concat([pdf, sub_df], ignore_index=False)
+            print(df)
+            df.to_csv(self.participants_file, sep="\t", index=False)
 
-        # Save the file
+    def add_to_participant(self, col, value):
+        """
+        Updates the participant information.
+
+        Args:
+            sub_info (dict): The subject information.
+        """
+        df = self.load_participants_file()
+        cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
+        print(df[cond])
+        df.loc[cond, col] = value
         df.to_csv(self.participants_file, sep="\t", index=False)
 
     def system_check(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
@@ -898,7 +994,7 @@ class PsychoPhysicsExperiment:
                 )
                 results.append(f"(✘) The actual refresh rate {rf} does not match {intended_rf}.")
             else:
-                self.logging.info("Monitor refresh rate checks out.")
+                self.logger.info("Monitor refresh rate checks out.")
                 results.append("(✓) Monitor refresh rate checks out.")
 
         # Processes
@@ -923,7 +1019,7 @@ class PsychoPhysicsExperiment:
 
         # Raise the priority of the experiment for CPU
         # Check if it's Mac OS X (these methods don't run on that platform)
-        if self.platform_settings["OS"] in ["darwin", "Mac OS X"]:
+        if self.settings["Platforms"][self.platform]["OS"] in ["darwin", "Mac OS X"]:
             self.logger.warning("Cannot raise the priority because you are on Mac OS X.")
             results.append("(✘) Cannot raise the priority because you are on Mac OS X.")
         else:
@@ -941,7 +1037,7 @@ class PsychoPhysicsExperiment:
         """ clear up the PsychoPy window"""
 
         # Reset background color
-        self.window.color = self.exp_params["General"]["background_color"]
+        self.window.color = self.stim_params["Display"]["background_color"]
         # Flip the window
         self.window.flip()
 
@@ -949,18 +1045,16 @@ class PsychoPhysicsExperiment:
         """Make a message stimulus"""
 
         # Make a message stimulus
-        msg = visual.TextStim(
+        self.msg_stim = visual.TextStim(
             self.window,
             font="Trebuchet MS",
-            color=self.exp_params["General"]["message_text_color"],
+            color=self.stim_params["Message"]["normal_text_color"],
             alignText='center',
             anchorHoriz='center',
             anchorVert='center',
             wrapWidth=self.window.size[0] / 2,
             autoLog=False
         )
-
-        return msg
 
     def make_countdown_stim(self):
         """Make a countdown stimulus"""
@@ -997,13 +1091,13 @@ class PsychoPhysicsExperiment:
         self.clear_screen()
 
         # Change background color
-        self.window.color = self.exp_params["General"]["message_background_color"]
+        params = self.stim_params["Message"]
+        self.window.color = params["background_color"]
 
         # Set the text
         self.msg_stim.text = text
 
         # Change color based on info
-        params = self.stim_params["Message"]
         if msg_type == "info":
             self.msg_stim.color = params["normal_text_color"]
         elif msg_type in ["warning", "error"]:
