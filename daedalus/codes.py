@@ -51,6 +51,7 @@ class Codex:
             "iti": 21,
             "usr": 22,
             "sacc": 23,
+            "rew": 24,
         }
         self.state_codes = {
             "init": 0.0,
@@ -96,6 +97,7 @@ class Codex:
             "iti": "INTER_TRIAL_INTERVAL",
             "usr": "USER",
             "sacc": "SACCADE",
+            "rew": "REWARD"
         }
         self.state_names = {
             "init": "START",

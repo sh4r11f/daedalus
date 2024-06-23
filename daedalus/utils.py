@@ -1,26 +1,29 @@
 # -*- coding: utf-8 -*-
 # ==================================================================================================== #
 #
-#                                                                                                                                                                                                      #
-#                    SCRIPT: utils.py                                                                                                                                                                 #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#          DESCRIPTION: Utility functions                                                                                                                                                                 #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                       RULE: DAYW                                                                                                                                                                 #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                                                                                                                                                                                                      #
-#                  CREATOR: Sharif Saleki                                                                                                                                                #
-#                         TIME: 05-26-2024-7810598105114117                                             #
-#                       SPACE: Dartmouth College, Hanover, NH                                                                                                               #
-#                                                                                                                                                                                                      #
+#
+#                    SCRIPT: utils.py
+#
+#
+#          DESCRIPTION: Utility functions
+#
+#
+#                       RULE: DAYW
+#
+#
+#
+#                  CREATOR: Sharif Saleki
+#                         TIME: 05-26-2024-7810598105114117
+#                       SPACE: Dartmouth College, Hanover, NH
+#
 # ==================================================================================================== #
 import inspect
 import yaml
 import json
 from pathlib import Path
+
+import matplotlib.font_manager as fm
+import seaborn as sns
 
 import numpy as np
 
@@ -107,3 +110,30 @@ def get_caller():
         str: The name of the calling function.
     """
     return inspect.currentframe().f_back.f_code.co_name
+
+
+def set_plotting_style(theme_params, rc_params, font_dir=None):
+    """
+    Sets the plotting style for the analysis.
+
+    Args:
+        theme_params (dict): The parameters for the theme.
+        rc_params (dict): The parameters for the rc (run command) settings.
+        font_dir (str): The directory where the font is located.
+    """
+    if font_dir is not None:
+        add_font(theme_params["font_name"], font_dir)
+    sns.set_them(**theme_params, rc=rc_params)
+
+
+def add_font(font_name: str, font_dir: str):
+    """
+    Finds the specified font for the plots and adds it to the font manager.
+
+    Args:
+        font_name (str): The name of the font to add.
+        font_dir (str): The directory where the font is located.
+    """
+    font_files = list(Path(font_dir).glob(f"*{font_name}*"))
+    for font_file in font_files:
+        fm.fontManager.addfont(str(font_file))

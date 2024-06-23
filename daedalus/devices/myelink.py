@@ -423,13 +423,20 @@ class MyeLink:
                 sample = self.eyelink.getFloatData()
                 if prev_sample is None or sample.getTime() != prev_sample.getTime():
                     prev_sample = sample
-                    info = self._process_sample(sample)
+                    info = self.process_sample(sample)
 
         return info
 
-    def _process_sample(self, sample):
+    def process_sample(self, sample, event_type):
         """
         Process the fixation start event
+
+        Args:
+            sample (pylink.Sample): The sample data.
+            event_type (int): The event type.
+
+        Returns:
+            dict: The processed sample data.
         """
         # Process the general data
         time = sample.getTime()
@@ -442,6 +449,7 @@ class MyeLink:
             pupil_size = eye_data.getPupilSize()
 
         return {
+            "event_type": event_type,
             "time": time,
             "gaze_x": gaze_x,
             "gaze_y": gaze_y,
@@ -450,12 +458,13 @@ class MyeLink:
             "pupil_size": pupil_size
         }
 
-    def process_events_online(self, events_of_interest: dict = None):
+    def process_events_online(self, events_of_interest: dict = None, process_samples: bool = False):
         """
         Find an event in the Eyelink tracker
 
         Args:
             events_of_interest (dict): Events to monitor.
+            process_samples (bool): Whether to process the samples.
 
         Returns:
             dict: The event information.
@@ -471,6 +480,8 @@ class MyeLink:
 
         # Initialize the event information
         events = []
+        samples = []
+        prev_sample = None
 
         # Go through the samples and events in the buffer
         while True:
@@ -486,23 +497,43 @@ class MyeLink:
                 break
 
             # Get the event data for the tracked eye
-            if (item_type is not None) and (item_type in events_of_interest.values()):
-                data = self.eyelink.getFloatData()
-                if data.getEye() == self.params["eye"]:
-                    if item_type == pylink.STARTFIX:
-                        func = self.detect_fixation_start_event
-                    elif item_type == pylink.ENDFIX:
-                        func = self.detect_fixation_update_event
-                    elif item_type == pylink.FIXUPDATE:
-                        func = self.detect_saccade_start_event
-                    elif item_type == pylink.STARTSACC:
-                        func = self.process_fixation_end_event
-                    elif item_type == pylink.ENDSACC:
-                        func = self.process_saccade_end_event
-                    # Detect/process the event data
-                    events.append(func(data))
+            if item_type is not None:
+                if item_type in events_of_interest.values():
+                    ev_data = self.eyelink.getFloatData()
+                    if ev_data.getEye() == self.params["eye"]:
+                        if item_type == pylink.STARTFIX:
+                            func = self.detect_fixation_start_event
+                        elif item_type == pylink.ENDFIX:
+                            func = self.detect_fixation_update_event
+                        elif item_type == pylink.FIXUPDATE:
+                            func = self.detect_saccade_start_event
+                        elif item_type == pylink.STARTSACC:
+                            func = self.process_fixation_end_event
+                        elif item_type == pylink.ENDSACC:
+                            func = self.process_saccade_end_event
+                        # Detect/process the event data
+                        events.append(func(ev_data))
 
-        return events
+                    # Process the sample data for this event
+                    if process_samples:
+                        while True:
+                            # break if no more samples
+                            sample = self.eyelink.getNextData()
+                            if not sample:
+                                break
+                            # break if found next event
+                            if sample is not None:
+                                if sample != pylink.SAMPLE_TYPE:
+                                    break
+                            if sample == pylink.SAMPLE_TYPE:
+                                sam_data = self.eyelink.getFloatData()
+                                if prev_sample is None or sam_data.getTime() != prev_sample.getTime():
+                                    prev_sample = sam_data
+                                    samples.append(self.process_sample(sam_data, item_type))
+        if process_samples:
+            return events, samples
+        else:
+            return events
 
     def detect_fixation_start_event(self, data):
         """
