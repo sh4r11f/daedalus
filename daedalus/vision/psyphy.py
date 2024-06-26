@@ -196,7 +196,7 @@ class PsychoPhysicsExperiment:
         txt += "Press Space to start."
         while True:
             resp = self.show_msg(txt)
-            if resp == "space":
+            if (resp == "space") or (self.debug):
                 # Reset the block clock
                 self.block_clock.reset()
                 # Initialize the block data
@@ -1194,9 +1194,8 @@ class PsychoPhysicsExperiment:
                 break
 
         if key_press == "ctrl+c":
-            self.goodbye("User quit.")
+            self.goodbye(self.codex.message("usr", "term"))
         else:
-            self.logger.info(f"User pressed {key_press}.")
             self.clear_screen()
             return key_press
 
