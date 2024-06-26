@@ -308,7 +308,7 @@ class MyeLink:
         """
         Get the lag of the Eyelink tracker
         """
-        return self.eyelink.trackerTimeUsecOffset
+        return self.eyelink.trackerTimeUsecOffset()
 
     def get_time(self):
         """
