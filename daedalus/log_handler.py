@@ -49,7 +49,27 @@ class DaedalusLogger(logging.Logger):
             self.add_file_handler(log_file)
         self.add_console_handler()
 
-    def findCaller(self, stack_info=False, stacklevel=1):
+    def debug(self, msg, *args, **kwargs):
+        kwargs.setdefault('stacklevel', 3)
+        super().debug(msg, *args, **kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        kwargs.setdefault('stacklevel', 3)
+        super().info(msg, *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        kwargs.setdefault('stacklevel', 3)
+        super().warning(msg, *args, **kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        kwargs.setdefault('stacklevel', 3)
+        super().error(msg, *args, **kwargs)
+
+    def critical(self, msg, *args, **kwargs):
+        kwargs.setdefault('stacklevel', 3)
+        super().critical(msg, *args, **kwargs)
+
+    def findCaller(self, stack_info=True, stacklevel=2):
         """
         Find the stack frame of the caller so that we can note the source file name,
         line number, and function name. Override to account for custom wrapper methods.
@@ -159,6 +179,13 @@ class DaedalusLogger(logging.Logger):
     def remove_all_handlers(self):
         for handler in list(self.logger.handlers):
             self.removeHandler(handler)
+
+    def close(self):
+        """
+        Close the logger and remove all handlers.
+        """
+        self.remove_all_handlers()
+        super().close()
 
 
 # Register the custom logger

@@ -264,7 +264,7 @@ class MyeLink:
             str or None: The error message.
         """
         # Check connection
-        if not self.eyeLink.isConnected():
+        if not self.eyelink.isConnected():
             return self.codex_msg("con", "fail")
         else:
             # Send the tracker to offline mode

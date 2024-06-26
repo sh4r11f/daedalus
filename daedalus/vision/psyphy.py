@@ -215,8 +215,8 @@ class PsychoPhysicsExperiment:
                 # Initialize the block data
                 self.init_block_data()
                 # Log the start of the block
-                self.log_info(self.codex.message("block", "init"))
-                self.log_info(f"BLOCKID_{self.block_id}")
+                self.block_info(self.codex.message("block", "init"))
+                self.block_info(f"BLOCKID_{self.block_id}")
                 break
 
     def prepare_trial(self, trial_id):
@@ -228,14 +228,14 @@ class PsychoPhysicsExperiment:
         """
         self.trial_id = self._fix_id(trial_id)
         self.trial_clock.reset()
-        self.log_info(self.codex.message("trial", "init"))
-        self.log_info(f"TRIALID_{self.trial_id}")
+        self.trial_info(self.codex.message("trial", "init"))
+        self.trial_info(f"TRIALID_{self.trial_id}")
 
     def wrap_trial(self):
         """
         Wrap up the trial.
         """
-        self.log_info(self.codex.message("trial", "fin"))
+        self.trial_info(self.codex.message("trial", "fin"))
         self.window.recordFrameIntervals = False
         self.window.frameIntervals = []
         self.clear_screen()
@@ -246,7 +246,7 @@ class PsychoPhysicsExperiment:
         """
         self.stim_data.loc[int(self.trial_id) - 1, "TrialRepeated"] = 1
         self.behav_data.loc[int(self.trial_id) - 1, "TrialRepeated"] = 1
-        self.log_warning(self.codex.message("trial", "stop"))
+        self.trial_warning(self.codex.message("trial", "stop"))
         self.window.flip()
         self.window.recordFrameIntervals = False
         self.window.frameIntervals = []
@@ -257,7 +257,7 @@ class PsychoPhysicsExperiment:
         Wrap up the block.
         """
         # Log the end of the block
-        self.log_info(self.codex.message("block", "fin"))
+        self.block_info(self.codex.message("block", "fin"))
 
         # Save the data
         self.save_stim_data()
@@ -272,8 +272,7 @@ class PsychoPhysicsExperiment:
         """
         Stop the block.
         """
-        self.log_warning(self.codex.message("block", "stop"))
-        
+        self.block_warning(self.codex.message("block", "stop"))
         msg = f"Stopping block {self.block_id} due to too many failed trials ."
         self.show_msg(msg, wait_time=self.stim_params["Message"]["warning_duration"], msg_type="warning")
 
@@ -282,7 +281,7 @@ class PsychoPhysicsExperiment:
         End the session.
         """
         # Log the end of the session
-        self.log_info(self.codex.message("ses", "fin"))
+        self.logger.info(self.codex.message("ses", "fin"))
         msg = f"Session {self.ses_id} of the experiment is over. Thank you for participating :)"
         self.show_msg(msg, wait_time=self.stim_params["Message"]["thanks_duration"], msg_type="info")
         # Save
@@ -322,7 +321,7 @@ class PsychoPhysicsExperiment:
         """
         Save the log data.
         """
-        self.logger.handlers[0].close()
+        self.logger.close()
 
     def init_configs(self):
         """
@@ -425,7 +424,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.debug(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=3)
+        self.logger.debug(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def block_info(self, msg):
         """
@@ -434,7 +433,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.info(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=3)
+        self.logger.info(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def block_warning(self, msg):
         """
@@ -443,7 +442,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.warning(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=3)
+        self.logger.warning(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def block_error(self, msg):
         """
@@ -452,7 +451,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.error(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=3)
+        self.logger.error(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def block_critical(self, msg):
         """
@@ -461,7 +460,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.critical(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=3)
+        self.logger.critical(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def trial_debug(self, msg):
         """
@@ -470,7 +469,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.debug(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=3)
+        self.logger.debug(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=4)
 
     def trial_info(self, msg):
         """
@@ -479,7 +478,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.info(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=3)
+        self.logger.info(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=4)
 
     def trial_warning(self, msg):
         """
@@ -488,7 +487,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.warning(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=3)
+        self.logger.warning(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=4)
 
     def trial_error(self, msg):
         """
@@ -497,7 +496,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.error(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=3)
+        self.logger.error(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=4)
 
     def trial_critical(self, msg):
         """
@@ -506,52 +505,7 @@ class PsychoPhysicsExperiment:
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.critical(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=3)
-
-    def log_info(self, msg):
-        """
-        Log an info message and add the name of the function that called it.
-
-        Args:
-            msg (str): The message to be logged.
-        """
-        self.logger.info(f"[@{utils.get_caller()}] {msg}")
-
-    def log_warning(self, msg):
-        """
-        Log a warning message and add the name of the function that called it.
-
-        Args:
-            msg (str): The message to be logged.
-        """
-        self.logger.warning(f"[@{utils.get_caller()}] {msg}")
-
-    def log_error(self, msg):
-        """
-        Log an error message and add the name of the function that called it.
-
-        Args:
-            msg (str): The message to be logged.
-        """
-        self.logger.error(f"[@{utils.get_caller()}] {msg}")
-
-    def log_critical(self, msg):
-        """
-        Log a critical message and add the name of the function that called it.
-
-        Args:
-            msg (str): The message to be logged.
-        """
-        self.logger.critical(f"[@{utils.get_caller()}] {msg}")
-
-    def log_debug(self, msg):
-        """
-        Log a debug message and add the name of the function that called it.
-
-        Args:
-            msg (str): The message to be logged.
-        """
-        self.logger.debug(f"[@{utils.get_caller()}] {msg}")
+        self.logger.critical(msg, extra={"block": self.block_id, "trial": self.trial_id}, stack_info=True, stacklevel=4)
 
     def _fix_id(self, id_):
         """
@@ -615,7 +569,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_FrameIntervals.csv"
         frames_file = self.ses_data_dir / fname
         if frames_file.exists():
-            self.log_warning(f"File {frames_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {frames_file} already exists. Renaming the file as backup.")
             frames_file.rename(frames_file.with_suffix(".BAK"))
         self.frames_data_file = frames_file
         self.frames_data = pd.DataFrame(columns=[
@@ -631,7 +585,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_stimuli.csv"
         stim_file = self.ses_data_dir / fname
         if stim_file.exists():
-            self.log_warning(f"File {stim_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {stim_file} already exists. Renaming the file as backup.")
             stim_file.rename(stim_file.with_suffix(".BAK"))
         self.stim_data_file = stim_file
         self.stim_data = pd.DataFrame(columns=[
@@ -646,7 +600,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_behavioral.csv"
         behav_file = self.ses_data_dir / fname
         if behav_file.exists():
-            self.log_warning(f"File {behav_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {behav_file} already exists. Renaming the file as backup.")
             behav_file.rename(behav_file.with_suffix(".BAK"))
         self.behav_data_file = behav_file
         self.behav_data = pd.DataFrame(columns=[
@@ -906,7 +860,7 @@ class PsychoPhysicsExperiment:
         if dlg.OK:
             # Load the subject info
             pid = info["sub"].split(" ")[0]
-            sub_df = df.loc[df["PID"] == pid, :]
+            sub_df = df.loc[df["PID"].astype(int) == int(pid), :]
             return sub_df
         else:
             raise SystemExit("Subject loadation cancelled.")
@@ -1063,8 +1017,6 @@ class PsychoPhysicsExperiment:
         """
         # df = self.load_participants_file()
         df = pd.read_csv(self.part_file, sep="\t")
-        print(self.part_file)
-        print(df)
         cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
         df.loc[cond, col] = value
         df.to_csv(self.part_file, sep="\t", index=False)
@@ -1257,7 +1209,7 @@ class PsychoPhysicsExperiment:
         if key_press == "ctrl+c":
             self.goodbye("User quit.")
         else:
-            self.log_info(f"User pressed {key_press}.")
+            self.logger.info(f"User pressed {key_press}.")
             self.clear_screen()
             return key_press
 
@@ -1272,7 +1224,7 @@ class PsychoPhysicsExperiment:
         # Quit
         if raise_error is not None:
             # Save as much as you can
-            self.log_critical(self.codex.message("exp", "term"))
+            self.logger.critical(self.codex.message("exp", "term"))
             self.save_stim_data()
             self.save_behav_data()
             self.save_frame_data()
@@ -1280,7 +1232,7 @@ class PsychoPhysicsExperiment:
             raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Log
-            self.log_info("Bye Bye Experiment.")
+            self.logger.info("Bye Bye Experiment.")
             core.quit()
 
     def enable_force_quit(self):
@@ -1302,7 +1254,6 @@ class PsychoPhysicsExperiment:
         conc_blocks = []
         for block in self.exp_params["Tasks"][self.task_name]["blocks"]:
             for _ in range(block["n_blocks"]):
-                print(block["name"])
                 conc_blocks.append(block)
         return conc_blocks
 
