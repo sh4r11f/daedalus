@@ -36,6 +36,7 @@ class Codex:
             "rate": 9,
             "tracker": 30,
             "eye": 31,
+            "edf": 32,
 
             "exp": 10,
             "ses": 11,
@@ -83,6 +84,7 @@ class Codex:
             "rate": "RATE",
             "tracker": "TRACKER",
             "eye": "EYE",
+            "edf": "EDF",
             "exp": "EXPERIMENT",
             "ses": "SESSION",
             "block": "BLOCK",

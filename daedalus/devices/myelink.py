@@ -323,9 +323,9 @@ class MyeLink:
         """
         Flush the Eyelink buffer
         """
-        self.eyelink.flushKeyButtons()
-        self.eyelink.flushGetkeyQueue()
-        self.resetData()
+        self.eyelink.flushKeybuttons(1)
+        pylink.flushGetkeyQueue()
+        self.eyelink.resetData()
         self.delay()
         self.codex_msg("reset", "done")
 

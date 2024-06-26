@@ -1,67 +1,212 @@
-#!/usr/bin/env python
-"""
-created 4/23/24
-
-@author Sharif Saleki
-
-Logging configuration for the LSS analysis.
-"""
+# -*- coding: utf-8 -*-
+# ======================================================================================== #
+#
+#
+#                    SCRIPT: log_handler.py
+#
+#
+#          DESCRIPTION: Custom Logger
+#
+#
+#                       RULE: DAYW
+#
+#
+#
+#                  CREATOR: Sharif Saleki
+#                         TIME: 04-23-2024-7810598105114117
+#                       SPACE: Dartmouth College, Hanover, NH
+#
+# ======================================================================================== #
 import logging
+import inspect
+import traceback
 
 
-def get_logger(name):
+class DaedalusLogger(logging.Logger):
     """
-    Make a logger.
-
-    Returns:
-
+    A class to create and configure a logger for Daedalus package.
     """
-    # Create a logger
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    def __init__(self, name, enable_debug=False, log_file=None):
+        """
+        Initialize the logger.
 
-    return logger
+        Args:
+            name (str): The name of the logger.
+            debug (bool): Whether to run in debug mode.
+            log_file (str): The path to the log file.
+        """
+        super().__init__(name)
+        self.enable_debug = enable_debug
+
+        # Create a logger
+        if self.enable_debug:
+            self.setLevel(logging.DEBUG)
+        else:
+            self.setLevel(logging.INFO)
+
+        # Add handlers
+        if log_file:
+            self.add_file_handler(log_file)
+        self.add_console_handler()
+
+    def findCaller(self, stack_info=False, stacklevel=1):
+        """
+        Find the stack frame of the caller so that we can note the source file name,
+        line number, and function name. Override to account for custom wrapper methods.
+        """
+        f = inspect.currentframe()
+        if f is not None:
+            f = f.f_back  # skip the frame of this method itself
+
+        while f and stacklevel > 0:
+            if f.f_code.co_name == "log_trial":  # Specific method to skip
+                stacklevel += 1  # Skip additional frame if inside a known wrapper
+            f = f.f_back
+            stacklevel -= 1
+        if f is not None:
+            co = f.f_code
+            sinfo = None
+            if stack_info:
+                sinfo = traceback.format_stack(f)
+            return co.co_filename, f.f_lineno, co.co_name, sinfo
+        return "(unknown file)", 0, "(unknown function)", None
+
+    def add_file_handler(self, log_file):
+        """
+        Adds handlers to the logger.
+
+        Args:
+            log_file (str): The path to the log file.
+        """
+        # Create handler
+        hand = logging.FileHandler(log_file)
+
+        # Set level
+        if self.enable_debug:
+            level = logging.DEBUG
+        else:
+            level = logging.INFO
+        hand.setLevel(level)
+
+        # Create formatters and add it to handlers
+        fmter = CustomFormatter("file", level)
+        hand.setFormatter(fmter)
+
+        # Add handlers to the logger
+        self.addHandler(hand)
+
+    def add_console_handler(self):
+        """
+        Adds a console handler to the logger.
+        """
+        # Create handler
+        hand = logging.StreamHandler()
+
+        # Set level
+        level = logging.DEBUG if self.enable_debug else logging.INFO
+        hand.setLevel(level)
+
+        # Create formatters and add it to handlers
+        fmter = CustomFormatter("conosle", level)
+        hand.setFormatter(fmter)
+
+        # Add handlers to the logger
+        self.addHandler(hand)
+
+    def set_handlers_level(self, handler_type, new_level):
+        """
+        Set the level of the handlers.
+
+        Args:
+            handler_type (str): The type of the handler.
+            new_level (str): The new level for the handler.
+
+        Raises:
+            ValueError: If the handler type is not found.
+        """
+        level = self.get_log_level(new_level)
+        for handler in self.handlers:
+            if (handler_type == "file") and (isinstance(handler, logging.FileHandler)):
+                handler.setLevel(level)
+                fmter = CustomFormatter(logger_device=handler_type, logger_level=level)
+                handler.setFormatter(fmter)
+            elif (handler_type == "console") and (isinstance(handler, logging.StreamHandler)):
+                handler.setLevel(level)
+                fmter = CustomFormatter(logger_device=handler_type, logger_level=level)
+                handler.setFormatter(fmter)
+            else:
+                raise ValueError(f"Handler {handler_type} not found")
+
+    def get_log_level(self, level):
+        """
+        Get the logging level from a string.
+
+        Args:
+            level (str): The log level as a string.
+
+        Returns:
+            int: The corresponding logging level.
+        """
+        levels = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+            "critical": logging.CRITICAL
+        }
+        return levels.get(level.lower(), logging.INFO)
+
+    def remove_all_handlers(self):
+        for handler in list(self.logger.handlers):
+            self.removeHandler(handler)
 
 
-def add_handlers(logger, log_file, *extra_handlers):
+# Register the custom logger
+logging.setLoggerClass(DaedalusLogger)
+
+
+class CustomFormatter(logging.Formatter):
     """
-
-    Returns:
-        logger (logging.Logger): The logger object.
+    Define a custom log formatter
     """
-    # Create handlers (console and file handler)
-    c_handler = logging.StreamHandler()
-    f_handlers = [logging.FileHandler(log_file)]
-    if extra_handlers:
-        f_handlers.append(logging.FileHandler(handler) for handler in extra_handlers)
+    def __init__(self, logger_device, logger_level, fmt=None):
+        if fmt is None:
+            fmt = "%(asctime)s | %(levelname)s | %(message)s"
+        super().__init__(fmt)
+        self.logger_device = logger_device
+        self.logger_level = logger_level
 
-    # Set levels for handlers
-    c_handler.setLevel(logging.WARNING)
-    f_handlers[0].setLevel(logging.INFO)
-    for handler in f_handlers[1:]:
-        handler.setLevel(logging.DEBUG)
+    def format(self, record):
+        """
+        Define fixed widths for different parts of the log message
 
-    # Create formatters and add it to handlers
-    c_format = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-    f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    c_handler.setFormatter(c_format)
-    for handler in f_handlers:
-        handler.setFormatter(f_format)
+        Args:
+            record (logging.LogRecord): The log record to format
 
-    # Add handlers to the logger
-    logger.addHandler(c_handler)
-    for handler in f_handlers:
-        logger.addHandler(handler)
+        Returns:
+            str: The formatted log message
+        """
+        # Format the log level and function name with fixed widths
+        level_width = 7
+        func_width = 17
+        # Ensure level name is capped at the fixed width
+        level = f"{record.levelname}".ljust(level_width)[:level_width]
+        # Ensure function name is capped at the fixed width
+        function = f"{record.funcName}".ljust(func_width)[:func_width]
+        # Format time consistently
+        time = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
 
-    return logger
+        # Create the formatted log message
+        log_msg = ""
+        if self.logger_device == "file":
+            log_msg += f"{time} | "
+        if self.logger_level == logging.DEBUG:
+            log_msg += f"@{function} | "
+        log_msg += f"{level} |  "
+        if hasattr(record, "block"):
+            log_msg += f"BLOCK {record.block} | "
+        if hasattr(record, "trial"):
+            log_msg += f"TRIAL {record.trial} | "
+        log_msg += f"{record.msg}"
 
-
-def set_handlers_level(logger, handler_type, new_level):
-    for handler in logger.handlers:
-        if isinstance(handler, handler_type):
-            handler.setLevel(new_level)
-
-
-def remove_handlers(logger):
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
+        return log_msg

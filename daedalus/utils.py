@@ -104,12 +104,12 @@ def get_hypot(point_a, point_b):
 
 def get_caller():
     """
-    Get the name of the function that called the current function.
+    Get the name of the function that called the function that's calling this function!
 
     Returns:
         str: The name of the calling function.
     """
-    return inspect.currentframe().f_back.f_code.co_name
+    return inspect.currentframe().f_back.f_back.f_code.co_name
 
 
 def set_plotting_style(theme_params, rc_params, font_dir=None):
@@ -137,3 +137,16 @@ def add_font(font_name: str, font_dir: str):
     font_files = list(Path(font_dir).glob(f"*{font_name}*"))
     for font_file in font_files:
         fm.fontManager.addfont(str(font_file))
+
+
+def str2tuple(string):
+    """
+    Convert a string to a tuple.
+
+    Args:
+        string (str): The string to convert.
+
+    Returns:
+        tuple: The converted tuple.
+    """
+    return tuple(map(int, string[1:-1].split(",")))
