@@ -297,7 +297,8 @@ class MyeLink:
         """
         error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
         if not error:
-            self.eyelink.sendCommand(f"add_file_preamble_text {self.params['preamble_text']}")
+            pretext = f"add_file_preamble_text {self.params['preamble_text']}"
+            self.eyelink.sendCommand(pretext)
             self.delay()
             return self.codex_msg("edf", "init")
         else:
@@ -345,7 +346,7 @@ class MyeLink:
             fx, fy = monitor.width / 2, monitor.height / 2
         else:
             fx, fy = fix_pos
-
+        fx, fy = int(fx), int(fy)
         # Perform drift correction
         while True:
             # Checks
@@ -356,9 +357,9 @@ class MyeLink:
 
             # Perform drift correction
             try:
-                self.eyelink.startDriftrCorrect(fx, fy)
+                self.eyelink.startDriftCorrect(fx, fy)
                 self.eyelink.waitForModeReady(self.params["wait_time"])
-                err = self.eyelink.doDriftCorrect(fx, fy, draw=1, allow_setup=0)
+                err = self.eyelink.doDriftCorrect(fx, fy, 1, 0)
                 # break if successful
                 if err != pylink.ESC_KEY:
                     res = self.eyelink.getCalibrationMessage()

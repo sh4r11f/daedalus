@@ -177,7 +177,7 @@ class DaedalusLogger(logging.Logger):
         return levels.get(level.lower(), logging.INFO)
 
     def remove_all_handlers(self):
-        for handler in list(self.logger.handlers):
+        for handler in list(self.handlers):
             self.removeHandler(handler)
 
     def close(self):
