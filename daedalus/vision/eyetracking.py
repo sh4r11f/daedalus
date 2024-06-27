@@ -716,28 +716,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
     def init_events_data(self):
         """
         """
-        columns = [
-            "BlockID", "BlockName", "TrialIndex", "TrialNumber",
-            "TrackerLag", "EventType",
-            "EventStart_ExpTime_ms", "EventStart_TrackerTime_ms", "EventStart_FrameN",
-            "EventEnd_ExpTime_ms", "EventEnd_TrackerTime_ms", "EventEnd_FrameN",
-            "EventDuration_ms", "EventDuration_fr", "Event_Period",
-            "GazeStartX_px", "GazeStartX_ppd", "GazeStartX_dva",
-            "GazeStartY_px", "GazeStartY_ppd", "GazeStartY_dva",
-            "GazeEndX_px", "GazeEndX_ppd", "GazeEndX_dva",
-            "GazeEndY_px", "GazeEndY_ppd", "GazeEndY_dva",
-            "GazeAvgX_px", "GazeAvgX_ppd", "GazeAvgX_dva",
-            "GazeAvgY_px", "GazeAvgY_ppd", "GazeAvgY_dva",
-            "AmplitudeX_dva", "AmplitudeY_dva",
-            "PupilStart_area", "PupilEnd_area", "PupilAvg_area",
-            "VelocityStart_dps", "VelocityEnd_dps", "VelocityAvg_dps", "VelocityPeak_dps",
-            "Angle_deg", "Angle_rad",
-        ]
-        self.events_data = pd.DataFrame(columns=columns)
-
-    def _init_events_file(self):
-        """
-        """
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeEvents.csv"
         events_file = self.ses_data_dir / fname
         if events_file.exists():
@@ -972,7 +950,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Close the eye tracker
-            status = self.tracker.terminate()
+            status = self.tracker.terminate(self.edf_host_file, self.edf_display_file)
             if status == self.codex.message("file", "ok"):
                 self.logger.info("Eye tracker file closed.")
             else:

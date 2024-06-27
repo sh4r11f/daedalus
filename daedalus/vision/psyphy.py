@@ -294,14 +294,13 @@ class PsychoPhysicsExperiment:
         """
         self.frames_data.to_csv(self.frames_data_file, sep=",", index=False)
 
-    def save_session_complete(self, experimenter):
+    def save_session_complete(self):
         """
         Save the participants data.
         """
         df = self.load_participants_file()
-        cond = (df["PID"] == self.sub_id) & (df["Session"] == self.ses_id & (df["Task"] == self.task_name))
+        cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
         df.loc[cond, "Completed"] = self.today
-        df.loc[cond, "Experimenter"] = experimenter
         df.to_csv(self.part_file, sep="\t", index=False)
 
     def save_log_data(self):
@@ -1051,11 +1050,12 @@ class PsychoPhysicsExperiment:
         # Processes
         flagged = run_info['systemUserProcFlagged']
         if flagged:
-            warning = "(✘) Flagged processes:\n"
+            results.append("(✘) Flagged processes:")
+            w = ""
             for proc in np.unique(flagged):
-                warning += f"\t- {proc}, "
-            self.logger.warning(warning)
-            results.append(warning)
+                w += f"\t- {proc}, "
+            self.logger.warning(f"Flagged processes: {w}")
+            results.append(w)
         else:
             self.logger.info("No flagged processes.")
             results.append("(✓) No flagged processes.")

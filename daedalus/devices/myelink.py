@@ -274,9 +274,9 @@ class MyeLink:
             self.delay()
             # Download the EDF data file from the Host PC to the Display PC
             try:
-                self.eyelink.receiveDataFile(host_file, display_file)
+                self.eyelink.receiveDataFile(str(host_file), str(display_file))
                 msg = self.codex_msg("file", "ok")
-                self.eyelink.closeGraphics()
+                pylink.closeGraphics()
                 self.eyelink.close()
                 return msg
             except RuntimeError as err:
