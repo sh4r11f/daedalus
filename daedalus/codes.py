@@ -71,6 +71,7 @@ class Codex:
             "onset": 0.04,
             "offset": 0.05,
             "per": 0.06,
+            "null": 0.07,
         }
         self.proc_names = {
             "con": "CONNECTION",
@@ -118,6 +119,7 @@ class Codex:
             "onset": "ONSET",
             "offset": "OFFSET",
             "period": "PERIOD",
+            "null": "NULL",
         }
 
     def code(self, proc, state):

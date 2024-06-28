@@ -82,19 +82,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.go_offline()
         self.tracker.configure(display_name=self.platform)
 
-        # Configure the eye tracker
-        self.logger.debug(f"Eyetrakcer mode: {self.tracker.eyelink.getTrackerMode()}")
-        self.logger.debug(f"Eyetrakcer version: {self.tracker.eyelink.getTrackerVersion()}")
-        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getAddress()}")
-        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getTrackerName()}")
-        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getEventDataFlags()}")
-
         # Open graphics environment
         self.tracker.go_offline()
         self.genv = self.make_graphics_env()
         w, h = self.window.size
-        self.logger.debug(f"Graphics environment: {self.genv}")
-        self.logger.debug(f"Window size: {w}x{h}")
         self.tracker.set_calibration_graphics(w, h, self.genv)
 
         # Log the initialization
@@ -132,8 +123,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # practice block
             if int(block_id) == 0:
                 calib = True
-                self.logger.debug("Practice block. Calibrating.")
-            msg = f"You are about to begin block {self.block_id}/{n_blocks}"
+                msg = "You are about to begin a practice block."
+            else:
+                msg = f"You are about to begin block {self.block_id}/{n_blocks}"
 
         # Calibrate if needed
         if calib:
@@ -188,18 +180,19 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         if self.debug:
             recalib = False
             self.trial_clock = core.MonotonicClock()
-            self.trial_info(self.codex.message("trial", "init"))
-            self.trial_info(f"TRIALID_{self.trial_id}")
+            self.trial_debug(self.codex.message("trial", "init"))
+            self.trial_debug(f"TRIALID_{self.trial_id}")
         else:
             fix_status = self.establish_fixation()
             if fix_status == self.codex.message("fix", "ok"):
-                self.trial_debug("Fixation is established.")
+
                 # Drift correction
                 fix_pos = self.cart2mat(*self.fix_stim.pos)
                 drift_status = self.tracker.drift_correct(fix_pos)
                 if drift_status == self.codex.message("drift", "ok"):
                     self.trial_info(drift_status)
                     recalib = False
+
                     # Start recording
                     on_status = self.tracker.come_online()
                     if on_status == self.codex.message("rec", "init"):
@@ -211,17 +204,22 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                         self.tracker.direct_msg("!V CLEAR 128 128 128")
                     else:
                         self.handle_not_recording(on_status)
+
                 elif drift_status == self.codex.message("drift", "term"):
-                    self.trial_warning(drift_status)
+                    self.trial_error(drift_status)
                     recalib = True
+
                 elif drift_status == self.codex.message("con", "lost"):
                     self.handle_connection_loss(drift_status)
                     recalib = self.prepare_trial()
+
                 else:
                     recalib = self.handle_drift_error(drift_status)
+
             # Fixation timeout
             elif fix_status == self.codex.message("fix", "timeout"):
                 recalib = True
+
             else:
                 self.handle_connection_loss(fix_status)
                 recalib = self.prepare_trial()
@@ -240,7 +238,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         self.trial_error(self.codex.message("drift", "fail"))
         self.trial_error(error)
-        msg = f"Drift correction failed.\n{error}\nRetry? (Space)"
+        msg = f"Drift correction failed: {error}\n\nRetry? (Space) / Continue? (Enter)"
         resp = self.show_msg(msg, msg_type="error")
         if resp == "space":
             msg = self.tracker.codex_msg("trial", "rep")
@@ -259,12 +257,14 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         self.logger.error(self.codex.message("rec", "fail"))
         self.logger.error(error)
-        msg = f"Eyetracker is not recording.\n{error}\nReconnect? (Space)"
+        msg = f"Eyetracker is not recording: {error}\n\nReconnect? (Space) / Quit? (Escape)"
         resp = self.show_msg(msg, msg_type="error")
         if resp == "space":
             msg = self.tracker.codex_msg("con", "rep")
             self.logger.warning(msg)
             self.init_tracker()
+        else:
+            self.goodbye(self.codex.message("usr", "term"))
 
     def handle_connection_loss(self, error=None):
         """
@@ -281,6 +281,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.logger.critical(self.codex.message("con", "lost"))
         resp = self.show_msg(msg, msg_type="error")
         if resp == "space":
+            pylink.closeGraphics()
             self.init_tracker()
 
     def wrap_trial(self):
@@ -342,11 +343,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         Turn off the experiment.
         """
-        # Log the end of the session
-        self.logger.info(self.codex.message("ses", "fin"))
         self.tracker.send_cmd("record_status_message 'Session is over.'")
         self.tracker.codex_msg("ses", "fin")
-        self.tracker.terminate(self.edf_host_file, self.edf_display_file)
+        # Close the eye tracker
+        status = self.tracker.terminate(self.edf_host_file, self.edf_display_file)
+        if status == self.codex.message("file", "ok"):
+            self.logger.info("Eye tracker file closed.")
+        else:
+            # Log
+            self.logger.error(status)
         super().turn_off()
 
     def run_calibration(self, msg=None):
@@ -372,8 +377,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         # Run calibration
         self.tracker.send_cmd("record_status_message 'In calibration'")
         if resp == "escape":
-            self.logger.warning(status)
             status = self.tracker.codex_msg("calib", "term")
+            self.logger.warning(status)
         elif resp == "space":
             self.logger.info(self.codex.message("calib", "init"))
             # Take the tracker offline
@@ -552,7 +557,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is established or not.
         """
-        fix_event = {"fixation_start": pylink.STARTFIX}
+        fix_event = {"fixation_start": pylink.STARTFIX, "fixation_update": pylink.FIXUPDATE}
         fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
         if fix is None:
             fix = self.fix_stim
@@ -560,7 +565,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         while True:
             if self.trial_clock.getTime() - start_time > self.exp_params["General"]["fixation_timeout"]:
                 msg = self.tracker.codex_msg("fix", "timeout")
-                self.trial_warning(msg)
+                self.trial_error(msg)
                 return msg
 
             # Draw fixation
@@ -585,11 +590,11 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                     valid = self.gaze_in_square((gx, gy), fix.pos, fix_radi)
                 else:
                     raise NotImplementedError("Only circle and square methods are implemented.")
-                fixations.append(valid)
-
-            if any(fixations):
-                msg = self.tracker.codex_msg("fix", "ok")
-                return msg
+                
+                if valid:
+                    msg = self.tracker.codex_msg("fix", "ok")
+                    self.trial_info(msg)
+                    return msg
 
     def reboot_tracker(self):
         """
@@ -613,41 +618,44 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
         events = self.tracker.process_events_online(fix_events)
+        status = None
 
         # Check if there was an error
         if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.trial_error(events)
             return events, None
 
-        # Check if the fixation is valid
+        # Process the events
         if fix_pos is None:
             fix_pos = self.fix_stim.pos
         updates = []
         for event in events:
-            if event["event_type"] == "fixation_end":
-                msg = self.tracker.codex_msg("fix", "lost")
-                self.trial_warning(msg)
-                self.tracker.direct_msg(msg, delay=False)
-                return msg, events
+            gaze_x = event["gaze_avg_x"]
+            gaze_y = event["gaze_avg_y"]
+            gx, gy = self.mat2cart(gaze_x, gaze_y)
+            if method == "circle":
+                check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
+            elif method == "square":
+                check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
             else:
-                gaze_x = event["gaze_avg_x"]
-                gaze_y = event["gaze_avg_y"]
-                gx, gy = self.mat2cart(gaze_x, gaze_y)
-                if method == "circle":
-                    check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
-                elif method == "square":
-                    check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
-                else:
-                    raise NotImplementedError("Method is not implemented.")
-                updates.append(check)
-        if updates and all(updates):
-            msg = self.codex.message("fix", "ok")
-        else:
-            msg = self.codex.message("fix", "bad")
-            self.trial_warning(msg)
-            self.tracker.direct_msg(msg, delay=False)
+                raise NotImplementedError("Method is not implemented.")
+            updates.append(check)
 
-        return msg, events
+        # Check if all fixation is valid
+        if len(updates) > 0:
+            if all(updates):
+                status = self.codex.message("fix", "ok")
+                self.trial_debug(status)
+            else:
+                status = self.codex.message("fix", "bad")
+                self.trial_error(status)
+                self.tracker.direct_msg(status, delay=False)
+        else:
+            status = self.codex.message("fix", "null")
+            self.trial_debug(status)
+            self.trial_debug(f"Number of events found: {len(events)}")
+
+        return status, events
 
     def monitor_saccade(self, targets_pos, fix_pos=None, fix_method="circle"):
         """
@@ -964,18 +972,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 self.save_frame_data()
                 self.save_events_data()
                 self.save_samples_data()
-                self.save_log_data()
+                self.logger.close_file()
             except AttributeError as e:
-                self.logger.error(f"Error saving data: {e}")
+                print(f"Error saving data: {e}")
                 # Raise the error
                 raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
-            # Close the eye tracker
-            status = self.tracker.terminate(self.edf_host_file, self.edf_display_file)
-            if status == self.codex.message("file", "ok"):
-                self.logger.info("Eye tracker file closed.")
-            else:
-                # Log
-                self.logger.error(status)
             self.logger.info("Bye Bye Experiment.")
+            self.logger.close_file()
             core.quit()

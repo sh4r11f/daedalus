@@ -215,7 +215,7 @@ class PsychoPhysicsExperiment:
             trial_id (int): Trial number.
         """
         self.trial_id = self._fix_id(trial_id)
-        self.trial_clock.reset()
+        self.trial_clock = core.MonotonicClock()
         self.trial_info(self.codex.message("trial", "init"))
         self.trial_info(f"TRIALID_{self.trial_id}")
 
@@ -232,8 +232,6 @@ class PsychoPhysicsExperiment:
         """
         Stop the trial.
         """
-        self.stim_data.loc[int(self.trial_id) - 1, "TrialRepeated"] = 1
-        self.behav_data.loc[int(self.trial_id) - 1, "TrialRepeated"] = 1
         self.trial_warning(self.codex.message("trial", "stop"))
         self.window.flip()
         self.window.recordFrameIntervals = False
@@ -253,15 +251,23 @@ class PsychoPhysicsExperiment:
         self.save_frame_data()
 
         # Show the end of the block message
-        self.show_msg(f"Great job! You finished block {self.block_id}.", wait_time=5)
+        if int(self.block_id):
+            txt = emojize(f"Block {self.block_id} is done :rocket:")
+        else:
+            txt = emojize("Practice block is over :rocket:")
+        txt += emojize("\n\nStay tuned...")
+        self.show_msg(txt, wait_time=self.stim_params["Message"].get("wait_duration", 3))
         self.clear_screen()
 
-    def stop_block(self):
+    def stop_block(self, reason: str):
         """
         Stop the block.
+
+        Args:
+            reason (str): The reason for stopping the block.
         """
         self.block_warning(self.codex.message("block", "stop"))
-        msg = f"Stopping block {self.block_id} due to too many failed trials ."
+        msg = f"Too many failed {reason}s! Have to stop this block..."
         self.show_msg(msg, wait_time=self.stim_params["Message"]["warning_duration"], msg_type="warning")
 
     def turn_off(self):
@@ -270,8 +276,9 @@ class PsychoPhysicsExperiment:
         """
         # Log the end of the session
         self.logger.info(self.codex.message("ses", "fin"))
-        msg = f"Session {self.ses_id} of the experiment is over. Thank you for participating :)"
-        self.show_msg(msg, wait_time=self.stim_params["Message"]["thanks_duration"], msg_type="info")
+        msg = emojize(f"You did it :fire: Session {self.ses_id} of the experiment is over.")
+        msg += emojize("\n\nThank you!")
+        self.show_msg(msg, wait_time=self.stim_params["Message"]["duration"], msg_type="info")
         # Save
         self.save_session_complete()
         # Quit
@@ -303,12 +310,6 @@ class PsychoPhysicsExperiment:
         cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
         df.loc[cond, "Completed"] = self.today
         df.to_csv(self.part_file, sep="\t", index=False)
-
-    def save_log_data(self):
-        """
-        Save the log data.
-        """
-        self.logger.close()
 
     def init_configs(self):
         """
@@ -553,7 +554,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_FrameIntervals.csv"
         frames_file = self.ses_data_dir / fname
         if frames_file.exists():
-            self.block_warning(f"File {frames_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {frames_file.name} already exists. Renaming the file as backup.")
             frames_file.rename(frames_file.with_suffix(".BAK"))
         self.frames_data_file = frames_file
         self.frames_data = pd.DataFrame(columns=[
@@ -569,7 +570,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_stimuli.csv"
         stim_file = self.ses_data_dir / fname
         if stim_file.exists():
-            self.block_warning(f"File {stim_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {stim_file.name} already exists. Renaming the file as backup.")
             stim_file.rename(stim_file.with_suffix(".BAK"))
         self.stim_data_file = stim_file
         self.stim_data = pd.DataFrame(columns=[
@@ -584,7 +585,7 @@ class PsychoPhysicsExperiment:
         fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_behavioral.csv"
         behav_file = self.ses_data_dir / fname
         if behav_file.exists():
-            self.block_warning(f"File {behav_file} already exists. Renaming the file as backup.")
+            self.block_warning(f"File {behav_file.name} already exists. Renaming the file as backup.")
             behav_file.rename(behav_file.with_suffix(".BAK"))
         self.behav_data_file = behav_file
         self.behav_data = pd.DataFrame(columns=[
@@ -655,9 +656,12 @@ class PsychoPhysicsExperiment:
             full_screen = False
             show_gui = True
         else:
-            monitor_size_px = self.monitor_params["size_pix"]
-            full_screen = True
-            show_gui = False
+            # monitor_size_px = self.monitor_params["size_pix"]
+            monitor_size_px = [1600, 900]
+            full_screen = False
+            show_gui = True
+            # full_screen = True
+            # show_gui = False
 
         # Make the window object
         window = visual.Window(
@@ -961,7 +965,9 @@ class PsychoPhysicsExperiment:
         """
         columns = ["Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
         columns += [k.replace("_", "") for k in self.exp_params["Subjects"].keys()]
-        df = pd.DataFrame(columns=columns, dtype=str)
+        df = pd.DataFrame(columns=columns)
+        df["Session"] = df["Session"].astype(int)
+        df["PID"] = df["PID"].astype(int)
         df["Completed"] = pd.to_datetime(df["Completed"])
         df.to_csv(self.part_file, sep="\t", index=False)
 
@@ -981,15 +987,13 @@ class PsychoPhysicsExperiment:
             sub_df = sub_info
 
         pdf = self.load_participants_file()
-        pids = self._fix_id(pdf["PID"].values)
-        self.logger.debug(f"Loaded PIDs: {pdf['PID'].values}")
-        self.logger.debug(f"Available PIDs: {pids}")
-        if self.sub_id not in pids:
+        pids = pdf["PID"].values.astype(int)
+        if int(self.sub_id) not in pids:
             df = pd.concat([pdf, sub_df], ignore_index=False)
             df.to_csv(self.part_file, sep="\t", index=False)
         else:
             duplicate = pdf.loc[
-                (pdf["PID"] == self.sub_id) & (pdf["Session"] == self.ses_id) & (pdf["Task"] == self.task_name)
+                (pdf["PID"] == int(self.sub_id)) & (pdf["Session"] == int(self.ses_id)) & (pdf["Task"] == self.task_name)
             ]
             if duplicate.shape[0] == 0:
                 df = pd.concat([pdf, sub_df], ignore_index=False)
@@ -1004,7 +1008,7 @@ class PsychoPhysicsExperiment:
         """
         # df = self.load_participants_file()
         df = pd.read_csv(self.part_file, sep="\t")
-        cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
+        cond = ((df["PID"] == int(self.sub_id)) & (df["Session"] == int(self.ses_id)) & (df["Task"] == self.task_name))
         df.loc[cond, col] = value
         df.to_csv(self.part_file, sep="\t", index=False)
 
@@ -1103,9 +1107,9 @@ class PsychoPhysicsExperiment:
             height=self.stim_params["Message"]["font_height"],
             color=utils.str2tuple(self.stim_params["Message"]["normal_text_color"]),
             alignText='left',
-            anchorHoriz='right',
+            anchorHoriz='center',
             anchorVert='center',
-            wrapWidth=self.window.size[0] / 3,
+            wrapWidth=self.window.size[0] / 2.5,
             autoLog=False
         )
 
@@ -1141,6 +1145,7 @@ class PsychoPhysicsExperiment:
             str: The key press that was made.
         """
         # Clear the screen
+        event.clearEvents()
         self.clear_screen()
 
         # Change background color
@@ -1176,18 +1181,19 @@ class PsychoPhysicsExperiment:
         key_press = None
         while True:
             # Check for key presses
-            if wait_keys:
-                pressed = event.getKeys(modifiers=True)
-                for pk, mods in pressed:
-                    pms = [mod for mod, val in mods.items() if val]
-                    for vk, vm in valid_keys:
-                        if vm is None:
-                            if pk == vk:
-                                key_press = pk
-                        else:
-                            if (pk == vk) and (vm in pms):
-                                key_press = "+".join([vm, vk])
+            pressed = event.getKeys(modifiers=True)
+            for pk, mods in pressed:
+                pms = [mod for mod, val in mods.items() if val]
+                for vk, vm in valid_keys:
+                    if vm is None:
+                        if pk == vk:
+                            key_press = pk
+                    else:
+                        if (pk == vk) and (vm in pms):
+                            key_press = "+".join([vm, vk])
                 # Break if a key is pressed
+
+            if wait_keys:
                 if key_press is not None:
                     break
             # Wait for a certain amount of time
@@ -1217,13 +1223,14 @@ class PsychoPhysicsExperiment:
                 self.save_stim_data()
                 self.save_behav_data()
                 self.save_frame_data()
-                self.save_log_data()
-            except AttributeError as e:
-                self.logger.error(f"Error in saving data: {e}")
+                self.logger.close_file()
+            except Exception as e:
+                print(f"Error in saving data: {e}")
                 raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Log
             self.logger.info("Bye Bye Experiment.")
+            self.logger.close_file()
             core.quit()
 
     def enable_force_quit(self):

@@ -39,10 +39,10 @@ class DaedalusLogger(logging.Logger):
         self.enable_debug = enable_debug
 
         # Create a logger
-        if self.enable_debug:
-            self.setLevel(logging.DEBUG)
-        else:
-            self.setLevel(logging.INFO)
+        # if self.enable_debug:
+        #     self.setLevel(logging.DEBUG)
+        # else:
+        #     self.setLevel(logging.INFO)
 
         # Add handlers
         if log_file:
@@ -106,7 +106,7 @@ class DaedalusLogger(logging.Logger):
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
-        fmter = CustomFormatter("file", "DEBUG")
+        fmter = CustomFormatter("file", level)
         hand.setFormatter(fmter)
 
         # Add handlers to the logger
@@ -125,7 +125,7 @@ class DaedalusLogger(logging.Logger):
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
-        fmter = CustomFormatter("conosle", "DEBUG")
+        fmter = CustomFormatter("conosle", level)
         hand.setFormatter(fmter)
 
         # Add handlers to the logger
@@ -163,7 +163,7 @@ class DaedalusLogger(logging.Logger):
                 handler.setFormatter(fmter)
             else:
                 raise ValueError(f"Handler {handler_type} not found")
-    
+
     def get_handlers_level(self, handler_type):
         """
         Get the level of the handlers.
@@ -203,12 +203,10 @@ class DaedalusLogger(logging.Logger):
         for handler in list(self.handlers):
             self.removeHandler(handler)
 
-    def close(self):
-        """
-        Close the logger and remove all handlers.
-        """
-        self.remove_all_handlers()
-        super().close()
+    def close_file(self):
+        for handler in self.handlers:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
 
 
 # Register the custom logger
@@ -237,12 +235,14 @@ class CustomFormatter(logging.Formatter):
             str: The formatted log message
         """
         # Format the log level and function name with fixed widths
+        func_width = 24
         level_width = 8
-        func_width = 20
         # Ensure level name is capped at the fixed width
+        # level = f"{record.levelname}".ljust(level_width)[:level_width]
         level = f"{record.levelname}".ljust(level_width)[:level_width]
         # Ensure function name is capped at the fixed width
-        function = f"{record.funcName}".ljust(func_width)[:func_width]
+        # function = f"{record.funcName}".ljust(func_width)[:func_width]
+        function = f"{record.funcName}:{record.lineno}".ljust(func_width)
         # Format time consistently
         time = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
 
@@ -252,7 +252,7 @@ class CustomFormatter(logging.Formatter):
             log_msg += f"{time} | "
         if self.logger_level == logging.DEBUG:
             log_msg += f"@{function} | "
-        log_msg += f"{level} |  "
+        log_msg += f"{level} | "
         if hasattr(record, "block"):
             log_msg += f"BLOCK {record.block} | "
         if hasattr(record, "trial"):

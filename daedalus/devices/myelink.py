@@ -295,15 +295,18 @@ class MyeLink:
         Returns:
             str or None: The error message.
         """
-        error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
-        if not error:
-            pretext = f"add_file_preamble_text {self.params['preamble_text']}"
-            self.eyelink.sendCommand(pretext)
-            self.delay()
-            return self.codex_msg("edf", "init")
-        else:
-            self.codex_msg("edf", "fail")
-            return error
+        try:
+            error = self.eyelink.openDataFile(host_file)  # Gives 0 or error code
+            if not error:
+                pretext = f"add_file_preamble_text {self.params['preamble_text']}"
+                self.eyelink.sendCommand(pretext)
+                self.delay()
+                return self.codex_msg("edf", "init")
+            else:
+                self.codex_msg("edf", "fail")
+                return error
+        except:
+            raise RuntimeError("Error opening the EDF file.")
 
     def get_lag(self):
         """
@@ -318,7 +321,7 @@ class MyeLink:
         Returns:
             float: The time.
         """
-        return self.eyelink.trackerTime()
+        return self.eyelink.trackerTimeUsec()
 
     def reset(self):
         """
@@ -512,11 +515,11 @@ class MyeLink:
                         if item_type == pylink.STARTFIX:
                             func = self.detect_fixation_start_event
                         elif item_type == pylink.ENDFIX:
-                            func = self.detect_fixation_update_event
-                        elif item_type == pylink.FIXUPDATE:
-                            func = self.detect_saccade_start_event
-                        elif item_type == pylink.STARTSACC:
                             func = self.process_fixation_end_event
+                        elif item_type == pylink.FIXUPDATE:
+                            func = self.detect_fixation_update_event
+                        elif item_type == pylink.STARTSACC:
+                            func = self.detect_saccade_start_event
                         elif item_type == pylink.ENDSACC:
                             func = self.process_saccade_end_event
                         # Detect/process the event data
