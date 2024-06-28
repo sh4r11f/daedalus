@@ -641,14 +641,14 @@ class PsychoPhysicsExperiment:
             monitor.setSizePix(self.monitor_params["size_pix"])
 
             # Gamma correction
-            # gamma_file = self.root / "config" / f"{name}_gamma_grid.npy"
-            # try:
-            #     grid = np.load(str(gamma_file))
-            #     monitor.setLineariseMethod(1)  # (a + b*xx)**gamma
-            #     monitor.setGammaGrid(grid)
-            # except FileNotFoundError:
-            #     self.logger.warning("No gamma grid file found. Running without gamma correction.")
-            #     monitor.setGamma(None)
+            gamma_file = self.root / "config" / f"{name}_gamma_grid.npy"
+            try:
+                grid = np.load(str(gamma_file))
+                monitor.setLineariseMethod(1)  # (a + b*xx)**gamma
+                monitor.setGammaGrid(grid)
+            except FileNotFoundError:
+                self.logger.warning("No gamma grid file found. Running without gamma correction.")
+                monitor.setGamma(None)
 
             # Save for future use
             # monitor.save()
