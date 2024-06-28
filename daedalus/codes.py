@@ -118,7 +118,7 @@ class Codex:
             "done": "DONE",
             "onset": "ONSET",
             "offset": "OFFSET",
-            "period": "PERIOD",
+            "per": "PERIOD",
             "null": "NULL",
         }
 
@@ -131,14 +131,14 @@ class Codex:
 
         return self.proc_codes[proc] + self.state_codes[state]
 
-    def message(self, proc, state):
+    def message(self, proc_key, state_key):
 
-        if proc not in self.proc_names.keys():
-            raise ValueError(f"Process {proc} not found in the codex")
-        if state not in self.state_names.keys():
-            raise ValueError(f"State {state} not found in the codex")
+        if proc_key not in self.proc_names.keys():
+            raise ValueError(f"Process {proc_key} not found in the codex")
+        if state_key not in self.state_names.keys():
+            raise ValueError(f"State {state_key} not found in the codex")
 
-        return f"{self.proc_names[proc]}_{self.state_names[state]}"
+        return f"{self.proc_names[proc_key]}_{self.state_names[state_key]}"
 
     def code2msg(self, code):
         """
@@ -150,12 +150,33 @@ class Codex:
         Returns:
             str: The message corresponding to the code
         """
-        code_proc, code_state = modf(code)
-        code_proc = int(code_proc)
-        proc = [k for k, v in self.proc_codes.items() if v == code_proc][0]
-        state = [k for k, v in self.state_codes.items() if v == code_state][0]
+        return self.message(self.get_proc_key(code), self.get_state_key(code))
 
-        return self.message(proc, state)
+    def get_proc_key(self, code):
+        """
+        Get the process name from a code
+
+        Args:
+            code (float): The code to convert
+
+        Returns:
+            str: The process name corresponding to the code
+        """
+        proc_code = int(modf(code)[1])
+        return [k for k, v in self.proc_codes.items() if v == proc_code][0]
+
+    def get_state_key(self, code):
+        """
+        Get the state name from a code
+
+        Args:
+            code (float): The code to convert
+
+        Returns:
+            str: The state name corresponding to the code
+        """
+        state_code = round(modf(code)[0], 3)
+        return [k for k, v in self.state_codes.items() if v == state_code][0]
 
     def get_proc_name(self, code):
         """
@@ -167,9 +188,20 @@ class Codex:
         Returns:
             str: The process name corresponding to the code
         """
-        code_proc, code_state = modf(code)
-        code_proc = int(code_proc)
-        proc_key = [k for k, v in self.proc_codes.items() if v == code_proc][0]
-        proc_name = self.proc_names[proc_key].lower().capitalize()
+        proc = self.get_proc_key(code)
+        assert proc in self.proc_names.keys(), f"Process {proc} not found in the codex"
+        return self.proc_names[proc]
 
-        return proc_name
+    def get_state_name(self, code):
+        """
+        Get the state name from a code
+
+        Args:
+            code (float): The code to convert
+
+        Returns:
+            str: The state name corresponding to the code
+        """
+        state = self.get_state_key(code)
+        assert state in self.state_names.keys(), f"State {state} not found in the codex"
+        return self.state_names[state]

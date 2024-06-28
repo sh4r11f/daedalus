@@ -307,7 +307,8 @@ class PsychoPhysicsExperiment:
         Save the participants data.
         """
         df = self.load_participants_file()
-        cond = ((df["PID"] == self.sub_id) & (df["Session"] == self.ses_id) & (df["Task"] == self.task_name))
+        cond = ((df["PID"] == int(self.sub_id)) & (df["Session"] == int(self.ses_id)) & (df["Task"] == self.task_name))
+        df["Completed"] = pd.to_datetime(df["Completed"])
         df.loc[cond, "Completed"] = self.today
         df.to_csv(self.part_file, sep="\t", index=False)
 
@@ -935,10 +936,10 @@ class PsychoPhysicsExperiment:
             ValueError: If the PID is not found in the participants file.
         """
         pdf = self.load_participants_file()
-        if self.sub_id in pdf["PID"].values:
-            return pdf.loc[pdf["PID"] == self.sub_id, :]
+        if int(self.sub_id) in pdf["PID"].values:
+            return pdf.loc[pdf["PID"] == int(self.sub_id), :]
         else:
-            raise ValueError(f"PID {self.sub_id} not found in the participant file.")
+            raise ValueError(f"PID {int(self.sub_id)} not found in the participant file.")
 
     def load_participants_file(self):
         """
@@ -966,9 +967,6 @@ class PsychoPhysicsExperiment:
         columns = ["Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
         columns += [k.replace("_", "") for k in self.exp_params["Subjects"].keys()]
         df = pd.DataFrame(columns=columns)
-        df["Session"] = df["Session"].astype(int)
-        df["PID"] = df["PID"].astype(int)
-        df["Completed"] = pd.to_datetime(df["Completed"])
         df.to_csv(self.part_file, sep="\t", index=False)
 
         return df
@@ -1109,7 +1107,7 @@ class PsychoPhysicsExperiment:
             alignText='left',
             anchorHoriz='center',
             anchorVert='center',
-            wrapWidth=self.window.size[0] / 2.5,
+            wrapWidth=self.window.size[0] / 1.5,
             autoLog=False
         )
 

@@ -642,7 +642,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             status = self.codex.message("fix", "null")
             self.trial_debug(status)
-            self.trial_debug(f"Number of events found: {len(events)}")
 
         return status, events
 
@@ -789,28 +788,31 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         df = pd.DataFrame()
         df["BlockID"] = self.block_id
         df["BlockName"] = self.all_blocks[int(self.block_id)-1]["name"]
-        df["TrialIndex"] = int(self.trial_id - 1)
         df["TrialNumber"] = self.trial_id
-        df["TrackerLag"] = self.ms_round(tracker_lag)
+        tidx = int(self.trial_id) - 1
+        df["TrialIndex"] = tidx
+        df["TrackerLag"] = tracker_lag
         df["EventType"] = data["event_type"]
         # time
         ts = data.get("time_start")
         if ts is not None:
-            df["EventStart_TrackerTime_ms"] = self.ms_round(ts)
-            df["EventStart_TrialTime_ms"] = self.ms_round(ts - tracker_lag)
+            df["EventStart_TrackerTime_ms"] = ts
+            df["EventStart_TrialTime_ms"] = ts - tracker_lag
             frame_n = self.time_point_to_frame_idx(ts, self.window.frameIntervals)
             df["EventStart_FrameN"] = frame_n
-            df["EventStart_Period"] = self.codex.code2msg(self.trial_frames[frame_n])
+
+            vec_coder = np.vectorize(self.codex.get_proc_name)
+            df["EventStart_Period"] = vec_coder(self.block_frames[tidx, frame_n])
         te = data.get("time_end")
         if te is not None:
-            df["EventEnd_TrackerTime_ms"] = self.ms_round(te)
-            df["EventEnd_TrialTime_ms"] = self.ms_round(te - tracker_lag)
+            df["EventEnd_TrackerTime_ms"] = te
+            df["EventEnd_TrialTime_ms"] = te - tracker_lag
             frame_n = self.time_point_to_frame_idx(te, self.window.frameIntervals)
             df["EventEnd_FrameN"] = frame_n
-            df["EventEnd_Period"] = self.codex.code2msg(self.trial_frames[frame_n])
+            df["EventEnd_Period"] = vec_coder(self.block_frames[tidx, frame_n])
         dur = data.get("duration")
         if dur is not None:
-            df["EventDuration_ms"] = self.ms_round(dur)
+            df["EventDuration_ms"] = dur
             df["EventDuration_fr"] = self.ms2fr(dur)
         # start gaze
         gsx = data.get("gaze_start_x")
