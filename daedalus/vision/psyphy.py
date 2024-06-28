@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from psychopy import core, monitors, visual, event, info
+from psychopy.tools.monitorunittools import deg2pix, pix2deg
 import psychopy.gui.qtgui as gui
 from psychopy.iohub.devices import Computer
 
@@ -1246,12 +1247,166 @@ class PsychoPhysicsExperiment:
         return conc_blocks
 
     def ms2fr(self, duration: float):
-        """Converts durations from ms to display frames"""
-        return np.ceil(self.monitor_params["refresh_rate"] * duration / 1000).astype(int)
+        """
+        Converts durations from ms to display frames:
+            duration (ms) * 1/1000 (s/ms) * rf (frames/s) = n (frames)
 
-    def fr2ms(self, frames: int):
-        """Converts durations from display frames to ms"""
-        return frames * 1000 / self.monitor_params["refresh_rate"]
+        Args:
+            duration (float): Duration in ms.
+
+        Returns:
+            int: Duration in frames
+        """
+        return np.ceil(duration * (1/1000) * self.monitor_params["refresh_rate"]).astype(int)
+
+    def fr2ms(self, n: int):
+        """
+        Converts durations from display frames to ms:
+            n (frames) * 1/rf (s/frame) * 1000 (ms/s) = duration (ms)
+
+        Args:
+            n (int): Duration in frames.
+
+        Returns:
+            float: Duration in ms.
+        """
+        return n * (1/self.monitor_params["refresh_rate"]) * 1000
+
+    def cps2cpf(self, cps: float):
+        """
+        Converts cycles per second to cycles per frame:
+            cps (cycles/s) * 1/rf (s/frames) = cpf (cycles/frame)
+
+        Args:
+            cps (float): Cycles per second (temporal frequency).
+
+        Returns:
+            float: Cycles per frame
+        """
+        return cps * (1/self.monitor_params["refresh_rate"])
+
+    def cpf2cps(self, cpf: float):
+        """
+        Converts cycles per frame to cycles per second:
+            cpf (cycles/frame) * rf (frames/s) = cps (cycles/s)
+
+        Args:
+            cpf (float): Cycles per frame.
+
+        Returns:
+            float: Cycles per second.
+        """
+        return cpf * self.monitor_params["refresh_rate"]
+
+    def cps2dps(self, cps: float, cpd: float):
+        """
+        Converts cycles per second to degrees per second:
+            cps (cycles/s) * 1/cpd (dva/cycles) = dps (dva/s)
+
+        Args:
+            cps (float): Cycles per second (temporal frequency).
+            cpd (float): Cycles per degree (spatial frequency).
+
+        Returns:
+            float: Degrees per second.
+        """
+        return cps * (1/cpd)
+
+    def dps2cps(self, dps: float, cpd: float):
+        """
+        Converts degrees per second to cycles per second:
+            dps (dva/s) * cpd (cycles/dva) = cps (cycles/s)
+
+        Args:
+            dps (float): Degrees per second.
+            cpd (float): Cycles per degree (spatial frequency).
+
+        Returns:
+            float: Cycles per second.
+        """
+        return dps * cpd
+
+    def dps2dpf(self, dps: float):
+        """
+        Converts degrees per second to degrees per frame:
+            dps (dva/s) * 1/rf (s/frame) = dpf (dva/frame)
+
+        Args:
+            dps (float): Degrees per second.
+
+        Returns:
+            float: Degrees per frame.
+        """
+        return dps * (1/self.monitor_params["refresh_rate"])
+
+    def dpf2dps(self, dpf: float):
+        """
+        Converts degrees per frame to degrees per second:
+            dpf (dva/frame) * rf (frames/s) = dps (dva/s)
+
+        Args:
+            dpf (float): Degrees per frame.
+
+        Returns:
+            float: Degrees per second.
+        """
+        return dpf * self.monitor_params["refresh_rate"]
+
+    def cpd2cpp(self, cpd: float):
+        """
+        Converts cycles per degree to cycles per pixel:
+            cpd (cycles/dva) * dpp (dva/pixel) = cpp (cycles/pixel)
+
+        Args:
+            cpd (float): Cycles per degree (spatial frequency).
+
+        Returns:
+            float: Cycles per pixel.
+        """
+        dpp = pix2deg(1, self.monitor)
+        return cpd * dpp
+
+    def cpp2cpd(self, cpp: float):
+        """
+        Converts cycles per pixel to cycles per degree:
+            cpp (cycles/pixel) * ppd (pixel/dva) = cpd (cycles/dva)
+
+        Args:
+            cpp (float): Cycles per pixel.
+
+        Returns:
+            float: Cycles per degree.
+        """
+        ppd = deg2pix(1, self.monitor)
+        return cpp * ppd
+
+    def dps2pps(self, dps: float):
+        """
+        Converts degrees per second to pixels per second:
+            dps (dva/s) * ppd (pixel/dva) = pps (pixel/s)
+
+        Args:
+            dps (float): Degrees per second.
+
+        Returns:
+            float: Pixels per second.
+        """
+        ppd = deg2pix(1, self.monitor)
+        return dps * ppd
+
+    def pps2dps(self, pps: float):
+        """
+        Converts pixels per second to degrees per second:
+            pps (pixel/s) * dpp (dva/pixel) = dps (dva/s)
+
+        Args:
+            pps (float): Pixels per second.
+
+        Returns:
+            float: Degrees per second.
+        """
+        dpp = pix2deg(1, self.monitor)
+        return pps * dpp
 
     def time_point_to_frame_idx(self, time, frame_times):
         """
