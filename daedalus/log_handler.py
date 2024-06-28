@@ -214,7 +214,7 @@ class CustomFormatter(logging.Formatter):
             str: The formatted log message
         """
         # Format the log level and function name with fixed widths
-        level_width = 7
+        level_width = 8
         func_width = 20
         # Ensure level name is capped at the fixed width
         level = f"{record.levelname}".ljust(level_width)[:level_width]
