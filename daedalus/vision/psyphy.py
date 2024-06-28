@@ -1272,7 +1272,7 @@ class PsychoPhysicsExperiment:
         """
         return n * (1/self.monitor_params["refresh_rate"]) * 1000
 
-    def cps2cpf(self, cps: float):
+    def hz2cpf(self, cps: float):
         """
         Converts cycles per second to cycles per frame:
             cps (cycles/s) * 1/rf (s/frames) = cpf (cycles/frame)
@@ -1285,20 +1285,21 @@ class PsychoPhysicsExperiment:
         """
         return cps * (1/self.monitor_params["refresh_rate"])
 
-    def cpf2cps(self, cpf: float):
+    def hz2dpf(self, cps: float, cpd: float):
         """
-        Converts cycles per frame to cycles per second:
-            cpf (cycles/frame) * rf (frames/s) = cps (cycles/s)
+        Converts cycles per second to degrees per frame:
+            cps (cycles/s) * 1/cpd (dva/cycles) * 1/rf (s/frame) = dpf (dva/frame)
 
         Args:
-            cpf (float): Cycles per frame.
+            cps (float): Cycles per second (temporal frequency).
+            cpd (float): Cycles per degree (spatial frequency).
 
         Returns:
-            float: Cycles per second.
+            float: Degrees per frame.
         """
-        return cpf * self.monitor_params["refresh_rate"]
+        return cps * (1/cpd) * (1/self.monitor_params["refresh_rate"])
 
-    def cps2dps(self, cps: float, cpd: float):
+    def hz2dps(self, cps: float, cpd: float):
         """
         Converts cycles per second to degrees per second:
             cps (cycles/s) * 1/cpd (dva/cycles) = dps (dva/s)
@@ -1312,45 +1313,35 @@ class PsychoPhysicsExperiment:
         """
         return cps * (1/cpd)
 
-    def dps2cps(self, dps: float, cpd: float):
+    def hz2pps(self, cps: float, cpd: float):
         """
-        Converts degrees per second to cycles per second:
-            dps (dva/s) * cpd (cycles/dva) = cps (cycles/s)
+        Converts cycles per second to pixels per second:
+            cps (cycles/s) * 1/cpd (dva/cycles) * ppd (pix/dva) = pps (pix/s)
 
         Args:
-            dps (float): Degrees per second.
+            cps (float): Cycles per second (temporal frequency).
             cpd (float): Cycles per degree (spatial frequency).
 
         Returns:
-            float: Cycles per second.
+            float: Pixels per second.
         """
-        return dps * cpd
+        ppd = deg2pix(1, self.monitor)
+        return cps * (1/cpd) * ppd
 
-    def dps2dpf(self, dps: float):
+    def hz2ppf(self, cps: float, cpd: float):
         """
-        Converts degrees per second to degrees per frame:
-            dps (dva/s) * 1/rf (s/frame) = dpf (dva/frame)
+        Converts cycles per second to pixels per frame:
+            cps (cycles/s) * 1/cpd (dva/cycles) * ppd (pix/dva) * 1/rf (s/frame) = ppf (pix/frame)
 
         Args:
-            dps (float): Degrees per second.
+            cps (float): Cycles per second (temporal frequency).
+            cpd (float): Cycles per degree (spatial frequency).
 
         Returns:
-            float: Degrees per frame.
+            float: Pixels per frame.
         """
-        return dps * (1/self.monitor_params["refresh_rate"])
-
-    def dpf2dps(self, dpf: float):
-        """
-        Converts degrees per frame to degrees per second:
-            dpf (dva/frame) * rf (frames/s) = dps (dva/s)
-
-        Args:
-            dpf (float): Degrees per frame.
-
-        Returns:
-            float: Degrees per second.
-        """
-        return dpf * self.monitor_params["refresh_rate"]
+        ppd = deg2pix(1, self.monitor)
+        return cps * (1/cpd) * ppd * (1/self.monitor_params["refresh_rate"])
 
     def cpd2cpp(self, cpd: float):
         """
@@ -1379,34 +1370,6 @@ class PsychoPhysicsExperiment:
         """
         ppd = deg2pix(1, self.monitor)
         return cpp * ppd
-
-    def dps2pps(self, dps: float):
-        """
-        Converts degrees per second to pixels per second:
-            dps (dva/s) * ppd (pixel/dva) = pps (pixel/s)
-
-        Args:
-            dps (float): Degrees per second.
-
-        Returns:
-            float: Pixels per second.
-        """
-        ppd = deg2pix(1, self.monitor)
-        return dps * ppd
-
-    def pps2dps(self, pps: float):
-        """
-        Converts pixels per second to degrees per second:
-            pps (pixel/s) * dpp (dva/pixel) = dps (dva/s)
-
-        Args:
-            pps (float): Pixels per second.
-
-        Returns:
-            float: Degrees per second.
-        """
-        dpp = pix2deg(1, self.monitor)
-        return pps * dpp
 
     def time_point_to_frame_idx(self, time, frame_times):
         """
