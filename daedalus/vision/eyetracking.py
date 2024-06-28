@@ -183,46 +183,35 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.trial_debug(self.codex.message("trial", "init"))
             self.trial_debug(f"TRIALID_{self.trial_id}")
         else:
-            fix_status = self.establish_fixation()
-            if fix_status == self.codex.message("fix", "ok"):
+            # Drift correction
+            fix_pos = self.cart2mat(*self.fix_stim.pos)
+            drift_status = self.tracker.drift_correct(fix_pos)
+            if drift_status == self.codex.message("drift", "ok"):
+                self.trial_info(drift_status)
+                recalib = False
 
-                # Drift correction
-                fix_pos = self.cart2mat(*self.fix_stim.pos)
-                drift_status = self.tracker.drift_correct(fix_pos)
-                if drift_status == self.codex.message("drift", "ok"):
-                    self.trial_info(drift_status)
-                    recalib = False
-
-                    # Start recording
-                    on_status = self.tracker.come_online()
-                    if on_status == self.codex.message("rec", "init"):
-                        self.trial_info(on_status)
-                        self.trial_clock = core.MonotonicClock()
-                        self.trial_info(f"TRIALID_{self.trial_id}")
-                        self.tracker.direct_msg(f"TRIALID {self.trial_id}")
-                        self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}, Trial {self.trial_id}.'")
-                        self.tracker.direct_msg("!V CLEAR 128 128 128")
-                    else:
-                        self.handle_not_recording(on_status)
-
-                elif drift_status == self.codex.message("drift", "term"):
-                    self.trial_error(drift_status)
-                    recalib = True
-
-                elif drift_status == self.codex.message("con", "lost"):
-                    self.handle_connection_loss(drift_status)
-                    recalib = self.prepare_trial()
-
+                # Start recording
+                on_status = self.tracker.come_online()
+                if on_status == self.codex.message("rec", "init"):
+                    self.trial_info(on_status)
+                    self.trial_clock = core.MonotonicClock()
+                    self.trial_info(f"TRIALID_{self.trial_id}")
+                    self.tracker.direct_msg(f"TRIALID {self.trial_id}")
+                    self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}, Trial {self.trial_id}.'")
+                    self.tracker.direct_msg("!V CLEAR 128 128 128")
                 else:
-                    recalib = self.handle_drift_error(drift_status)
+                    self.handle_not_recording(on_status)
 
-            # Fixation timeout
-            elif fix_status == self.codex.message("fix", "timeout"):
+            elif drift_status == self.codex.message("drift", "term"):
+                self.trial_error(drift_status)
                 recalib = True
 
-            else:
-                self.handle_connection_loss(fix_status)
+            elif drift_status == self.codex.message("con", "lost"):
+                self.handle_connection_loss(drift_status)
                 recalib = self.prepare_trial()
+
+            else:
+                recalib = self.handle_drift_error(drift_status)
 
         return recalib
 
