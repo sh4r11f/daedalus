@@ -128,6 +128,8 @@ class MyeLink:
         Args:
             display_name (str): The name of the display PC.
         """
+        # Enter setup menu
+        self.eyelink.doTrackerSetup()
         # Set the configuration from the config dictionary
         for key, value in self.params["AutoConfig"].items():
             self.eyelink.sendCommand(f"{key} = {value}")
@@ -139,16 +141,18 @@ class MyeLink:
         """
         Set the Eyelink tracker to offline mode
         """
-        # Stop recording if it is still recording
-        if self.eyelink.isRecording():
-            self.delay()
-            self.eyelink.stopRecording()
-            self.delay()
-            self.codex_msg("rec", "stop")
-        # Set the tracker to offline mode
-        self.eyelink.setOfflineMode()
-        self.eyelink.waitForModeReady(self.params["wait_time"])
-        self.codex_msg("idle", "init")
+        mode = self.eyelink.getCurrentMode()
+        if mode != pylink.IN_IDLE_MODE:
+            # Stop recording if it is still recording
+            if self.eyelink.isRecording():
+                self.delay()
+                self.eyelink.stopRecording()
+                self.delay()
+                self.codex_msg("rec", "stop")
+            # Set the tracker to offline mode
+            self.eyelink.setOfflineMode()
+            self.eyelink.waitForModeReady(self.params["wait_time"])
+            self.codex_msg("idle", "init")
 
     def set_calibration_graphics(self, width, height, graphics_env):
         """
