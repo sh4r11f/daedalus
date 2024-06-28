@@ -6,7 +6,7 @@
 #                    SCRIPT: tools.py
 #
 #
-#          DESCRIPTION: Tools to convert units.
+#          DESCRIPTION: Tools to calibrate, convert units, etc.
 #
 #
 #                       RULE: DAYW
