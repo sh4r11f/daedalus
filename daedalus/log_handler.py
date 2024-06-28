@@ -102,14 +102,11 @@ class DaedalusLogger(logging.Logger):
         hand = logging.FileHandler(log_file)
 
         # Set level
-        if self.enable_debug:
-            level = logging.DEBUG
-        else:
-            level = logging.INFO
+        level = logging.DEBUG
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
-        fmter = CustomFormatter("file", level)
+        fmter = CustomFormatter("file", "DEBUG")
         hand.setFormatter(fmter)
 
         # Add handlers to the logger
@@ -123,15 +120,25 @@ class DaedalusLogger(logging.Logger):
         hand = logging.StreamHandler()
 
         # Set level
-        level = logging.DEBUG if self.enable_debug else logging.INFO
+        # level = logging.DEBUG if self.enable_debug else logging.WARNING
+        level = logging.DEBUG
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
-        fmter = CustomFormatter("conosle", level)
+        fmter = CustomFormatter("conosle", "DEBUG")
         hand.setFormatter(fmter)
 
         # Add handlers to the logger
         self.addHandler(hand)
+
+    def show_handler_info(self):
+        """
+        Show the information of the handlers.
+        """
+        for handler in self.handlers:
+            print(f"Handler: {handler}")
+            print(f"Level: {logging.getLevelName(handler.level)}")
+            print(f"Formatter: {handler.formatter}")
 
     def set_handlers_level(self, handler_type, new_level):
         """
@@ -156,6 +163,22 @@ class DaedalusLogger(logging.Logger):
                 handler.setFormatter(fmter)
             else:
                 raise ValueError(f"Handler {handler_type} not found")
+    
+    def get_handlers_level(self, handler_type):
+        """
+        Get the level of the handlers.
+
+        Args:
+            handler_type (str): The type of the handler.
+
+        Returns:
+            str: The level of the handler.
+        """
+        for handler in self.handlers:
+            if (handler_type == "file") and (isinstance(handler, logging.FileHandler)):
+                return logging.getLevelName(handler.level)
+            elif (handler_type == "console") and (isinstance(handler, logging.StreamHandler)):
+                return logging.getLevelName(handler.level)
 
     def get_log_level(self, level):
         """
@@ -168,13 +191,13 @@ class DaedalusLogger(logging.Logger):
             int: The corresponding logging level.
         """
         levels = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "critical": logging.CRITICAL
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL
         }
-        return levels.get(level.lower(), logging.INFO)
+        return levels.get(level.upper(), logging.DEBUG)
 
     def remove_all_handlers(self):
         for handler in list(self.handlers):

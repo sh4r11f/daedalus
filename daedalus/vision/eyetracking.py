@@ -57,6 +57,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker_model = tracker_model
         self.tracker_params = None
         self.tracker = None
+        self.genv = None
 
         # Files
         self.events_data_file = None
@@ -78,20 +79,28 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         conf_file = self.root / "config" / "eyetrackers.yaml"
         self.tracker_params = utils.read_config(conf_file)[self.tracker_model]
         self.tracker = MyeLink(self.name, self.tracker_model, self.tracker_params, self.debug)
-        self.tracker.connect()
-
-        # Set it to idle mode
+        self.tracker.go_offline()
         self.tracker.configure(display_name=self.platform)
+
+        # Configure the eye tracker
+        self.logger.debug(f"Eyetrakcer mode: {self.tracker.eyelink.getTrackerMode()}")
+        self.logger.debug(f"Eyetrakcer version: {self.tracker.eyelink.getTrackerVersion()}")
+        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getAddress()}")
+        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getTrackerName()}")
+        self.logger.debug(f"Eyetrakcer info: {self.tracker.eyelink.getTrackerInfo().getEventDataFlags()}")
 
         # Open graphics environment
         self.tracker.go_offline()
-        genv = self.make_graphics_env()
+        self.genv = self.make_graphics_env()
         w, h = self.window.size
-        self.tracker.set_calibration_graphics(w, h, genv)
+        self.logger.debug(f"Graphics environment: {self.genv}")
+        self.logger.debug(f"Window size: {w}x{h}")
+        self.tracker.set_calibration_graphics(w, h, self.genv)
 
         # Log the initialization
+        self.tracker.go_offline()
         self.logger.info("Eyetracker is locked and loaded and ready to go.")
-        self.tracker.send_cmd("record_status_message 'Eyetracker configured'")
+        self.tracker.send_cmd("record_status_message 'Eyetracker configed'")
         self.tracker.codex_msg("tracker", "init")
 
     def prepare_block(self, block_id, repeat=False, calib=False):
@@ -117,7 +126,13 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         if repeat:
             msg = f"You are repeating block {self.block_id}/{n_blocks}"
             calib = True
+            self.logger.info(self.codex.message("block", "rep"))
+            self.logger.info(self.codex.message("calib", "rep"))
         else:
+            # practice block
+            if int(block_id) == 0:
+                calib = True
+                self.logger.debug("Practice block. Calibrating.")
             msg = f"You are about to begin block {self.block_id}/{n_blocks}"
 
         # Calibrate if needed
@@ -126,9 +141,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             if calib_res == self.codex.message("calib", "term"):
                 self.show_msg("Skipping calibration.", msg_type="warning")
             elif calib_res == self.codex.message("calib", "fail"):
-                resp = self.show_msg("Calibration failed. Try again? (Space)", msg_type="warning")
+                resp = self.show_msg("Calibration failed. Retry (Space) / Continue (Enter)?", msg_type="warning")
                 if resp == "space":
                     self.prepare_block(self.block_id, repeat, calib)
+                elif resp == "return":
+                    self.logger.warning(calib_res)
+                    msg_ = ["Calibration is done."]
+                    msg_.append(msg)
+                    msg_.append("Press Space to start the block")
+                    self.show_msg("\n\n".join(msg_))
                 else:
                     self.goodbye(calib_res)
             else:
@@ -172,6 +193,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             fix_status = self.establish_fixation()
             if fix_status == self.codex.message("fix", "ok"):
+                self.trial_debug("Fixation is established.")
                 # Drift correction
                 fix_pos = self.cart2mat(*self.fix_stim.pos)
                 drift_status = self.tracker.drift_correct(fix_pos)
@@ -343,15 +365,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             txt = [msg]
         txt.append("In the next screen, press C to calibrate the eyetracker.")
-        txt.append("Once the calibration is done, press Enter to accept the calibration and resume the experiment.")
+        txt.append("After the procedure, press Enter to accept the new calibration and then O to resume the experiment.")
         txt.append("Press Space to continue.")
         resp = self.show_msg("\n\n".join(txt))
 
         # Run calibration
         self.tracker.send_cmd("record_status_message 'In calibration'")
         if resp == "escape":
-            status = self.tracker.codex_msg("calib", "term")
             self.logger.warning(status)
+            status = self.tracker.codex_msg("calib", "term")
         elif resp == "space":
             self.logger.info(self.codex.message("calib", "init"))
             # Take the tracker offline
@@ -359,17 +381,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # Start calibration
             res = self.tracker.calibrate()
             if res == self.codex.message("calib", "ok"):
+                # txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
+                # resp = self.show_msg(txt)
+                # if resp == "return":
+                #     self.genv.exit_cal_display()
+                #     self.tracker.send_cmd("record_status_message 'Calibration done.'")
                 self.logger.info(res)
-                txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
-                self.msg_stim.text = txt
-                while self.tracker.eyelink.inSetup():
-                    self.msg_stim.draw()
-                    self.window.flip()
-                status = res
             else:
                 self.logger.error(res)
-                self.show_msg(f"Calibration error:\n\n{res}", msg_type="warning")
-                status = self.codex.message("calib", "fail")
+            status = res
 
         return status
 
@@ -406,19 +426,19 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.logger.error("Eye mismatch.")
 
         # Check the samples
-        t = 500
-        self.tracker.delay()
-        samples = self.tracker.process_samples_online()
-        if isinstance(samples, list):
-            if len(samples) > 0:
-                results.append(f"(✓) Eye tracker is working. Got {len(samples)} samples in {t}ms.")
-                self.logger.info(f"Eye tracker is working. Got {len(samples)} samples in {t}ms.")
-            else:
-                results.append(f"(✗) Eye tracker is not working. Got 0 samples in {t}ms.")
-                self.logger.warning(f"Eye tracker is not working. Got 0 samples in {t}ms.")
-        else:
-            results.append(f"(✗) Eye tracker is not working. Got error: {samples}.")
-            self.logger.error(f"Eye tracker is not working. Got error: {samples}.")
+        # t = 500
+        # self.tracker.delay()
+        # samples = self.tracker.process_samples_online()
+        # if isinstance(samples, list):
+        #     if len(samples) > 0:
+        #         results.append(f"(✓) Eye tracker is working. Got {len(samples)} samples in {t}ms.")
+        #         self.logger.info(f"Eye tracker is working. Got {len(samples)} samples in {t}ms.")
+        #     else:
+        #         results.append(f"(✗) Eye tracker is not working. Got 0 samples in {t}ms.")
+        #         self.logger.warning(f"Eye tracker is not working. Got 0 samples in {t}ms.")
+        # else:
+        #     results.append(f"(✗) Eye tracker is not working. Got error: {samples}.")
+        #     self.logger.error(f"Eye tracker is not working. Got error: {samples}.")
 
         # Set the tracker back to idle mode
         self.tracker.go_offline()
@@ -439,7 +459,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.window.color = utils.str2tuple(self.stim_params["Display"]["background_color"])
 
         # Configure a graphics environment (genv) for tracker calibration
-        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker, self.window)
+        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker.eyelink, self.window)
 
         # Set background and foreground colors for the calibration target
         foreground_color = utils.str2tuple(self.tracker_params["Calibration"]["target_color"])
@@ -448,23 +468,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         # Set up the calibration target
         genv.setTargetType('circle')
-        genv.setTargetSize(self.tracker_params["Calibration"]["target_size"])
+        genv.setTargetSize(deg2pix(self.tracker_params["Calibration"]["target_size"], self.monitor))
 
         # Set up the calibration sounds
         genv.setCalibrationSounds("", "", "")
 
         return genv
-
-    def set_graphics_env(self):
-        """
-        Make and set the graphics environment for the calibration.
-        """
-        # Screen size
-        width, height = self.window.size
-        # Make the graphics environment
-        genv = self.make_graphics_env()
-        # Set the calibration graphics
-        self.tracker.set_calibration_graphics(width, height, genv)
 
     def gaze_in_square(self, gaze, center, length):
         """
@@ -621,8 +630,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 self.tracker.direct_msg(msg, delay=False)
                 return msg, events
             else:
-                gaze_x = event["gaze_x"]
-                gaze_y = event["gaze_y"]
+                gaze_x = event["gaze_avg_x"]
+                gaze_y = event["gaze_avg_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
                     check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
@@ -675,8 +684,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         sacc = False
         for event in events:
             if event["event_type"] == "fixation_update":
-                gaze_x = event["gaze_x"]
-                gaze_y = event["gaze_y"]
+                gaze_x = event["gaze_avg_x"]
+                gaze_y = event["gaze_avg_y"]
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if fix_method == "circle":
                     check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
@@ -688,8 +697,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             elif event["event_type"] == "saccade_start":
                 sacc = True
             elif event["event_type"] == "saccade_end":
-                gaze_x = event["gaze_x"]
-                gaze_y = event["gaze_y"]
+                gaze_x = event["gaze_end_x"]
+                gaze_y = event["gaze_end_y"]
                 gp = self.mat2cart(gaze_x, gaze_y)
                 # check if close to target(s)
                 for tp in targets_pos:
@@ -949,14 +958,17 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # Log the error
             self.logger.critical(raise_error)
             # Save as much as you can
-            self.save_stim_data()
-            self.save_behav_data()
-            self.save_frame_data()
-            self.save_events_data()
-            self.save_samples_data()
-            self.save_log_data()
-            # Raise the error
-            raise SystemExit(f"Experiment ended with error: {raise_error}")
+            try:
+                self.save_stim_data()
+                self.save_behav_data()
+                self.save_frame_data()
+                self.save_events_data()
+                self.save_samples_data()
+                self.save_log_data()
+            except AttributeError as e:
+                self.logger.error(f"Error saving data: {e}")
+                # Raise the error
+                raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Close the eye tracker
             status = self.tracker.terminate(self.edf_host_file, self.edf_display_file)

@@ -319,7 +319,6 @@ class PsychoPhysicsExperiment:
         self.stim_params = utils.read_config(config_dir / "stimuli.yaml")
         monitor_name = self.settings["Platforms"][self.platform]["Monitor"]
         self.monitor_params = utils.read_config(config_dir / "monitors.yaml")[monitor_name]
-        print(self.monitor_params)
 
     # def init_database(self):
     #     """
@@ -510,10 +509,7 @@ class PsychoPhysicsExperiment:
         elif isinstance(id_, str) and len(id_) == 1:
             id_ = f"0{id_}"
         elif isinstance(id_, (list, np.ndarray)):
-            if len(id_) == 1:
-                return self._fix_id(id_[0])
-            else:
-                return [self._fix_id(i) for i in id_]
+            return [self._fix_id(i) for i in id_]
         return id_
 
     def _get_ses_tasks(self):
@@ -668,8 +664,8 @@ class PsychoPhysicsExperiment:
             name='DebugWindow' if self.debug else 'ExperimentWindow',
             monitor=monitor,
             fullscr=full_screen,
-            units='deg',  # units are always degrees by default
-            size=monitor_size_px,  # But size is in pixels
+            units='pix',
+            size=monitor_size_px,
             allowGUI=show_gui,
             waitBlanking=True,
             color=0,  # default to mid-grey
@@ -986,6 +982,8 @@ class PsychoPhysicsExperiment:
 
         pdf = self.load_participants_file()
         pids = self._fix_id(pdf["PID"].values)
+        self.logger.debug(f"Loaded PIDs: {pdf['PID'].values}")
+        self.logger.debug(f"Available PIDs: {pids}")
         if self.sub_id not in pids:
             df = pd.concat([pdf, sub_df], ignore_index=False)
             df.to_csv(self.part_file, sep="\t", index=False)
@@ -1030,7 +1028,7 @@ class PsychoPhysicsExperiment:
         # Start testing
         results = []
         self.logger.info("Running system checks.")
-        results.append("<Press `Space` to accept or `Escape` to quit>")
+        results.append("<Press Space to accept or Escape to quit>\n\n")
 
         # Refresh rate
         rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
@@ -1056,7 +1054,7 @@ class PsychoPhysicsExperiment:
             results.append("(✘) Flagged processes:")
             w = ""
             for proc in np.unique(flagged):
-                w += f"\t- {proc}, "
+                w += f"\t- {proc}\n"
             self.logger.warning(f"Flagged processes: {w}")
             results.append(w)
         else:
@@ -1102,11 +1100,12 @@ class PsychoPhysicsExperiment:
         self.msg_stim = visual.TextStim(
             self.window,
             font="Trebuchet MS",
+            height=self.stim_params["Message"]["font_height"],
             color=utils.str2tuple(self.stim_params["Message"]["normal_text_color"]),
-            alignText='center',
-            anchorHoriz='center',
+            alignText='left',
+            anchorHoriz='right',
             anchorVert='center',
-            wrapWidth=self.window.size[0] / 2,
+            wrapWidth=self.window.size[0] / 3,
             autoLog=False
         )
 
@@ -1212,13 +1211,16 @@ class PsychoPhysicsExperiment:
 
         # Quit
         if raise_error is not None:
-            # Save as much as you can
             self.logger.critical(self.codex.message("exp", "term"))
-            self.save_stim_data()
-            self.save_behav_data()
-            self.save_frame_data()
-            self.save_log_data()
-            raise SystemExit(f"Experiment ended with error: {raise_error}")
+            try:
+                # Save as much as you can
+                self.save_stim_data()
+                self.save_behav_data()
+                self.save_frame_data()
+                self.save_log_data()
+            except AttributeError as e:
+                self.logger.error(f"Error in saving data: {e}")
+                raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Log
             self.logger.info("Bye Bye Experiment.")

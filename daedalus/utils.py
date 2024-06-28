@@ -149,4 +149,5 @@ def str2tuple(string):
     Returns:
         tuple: The converted tuple.
     """
-    return tuple(map(int, string[1:-1].split(",")))
+    # Clean the string
+    return tuple(map(int, string.replace(" ", "")[1:-1].split(",")))

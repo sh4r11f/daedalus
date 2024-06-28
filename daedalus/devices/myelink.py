@@ -55,8 +55,12 @@ class MyeLink:
         self.tracker_name = tracker_name
         self.params = tracker_config
         self.dummy = dummy
-        self.eyelink = None
         self.codex = Codex()
+
+        if self.dummy:
+            self.eyelink = pylink.EyeLink(None)
+        else:
+            self.eyelink = pylink.EyeLink(self.params["Connection"]["ip_address"])
 
     def delay(self, delay_time=None):
         """
@@ -111,15 +115,6 @@ class MyeLink:
         if delay:
             self.delay()
 
-    def connect(self):
-        """
-        Connect to the Eyelink tracker
-        """
-        if self.dummy:
-            self.eyelink = pylink.EyeLink(None)
-        else:
-            self.eyelink = pylink.EyeLink(self.params["Connection"]["ip_address"])
-
     def configure(self, display_name):
         """
         Configure the Eyelink 1000 connection to track the specified events and have the appropriate setup
@@ -129,7 +124,7 @@ class MyeLink:
             display_name (str): The name of the display PC.
         """
         # Enter setup menu
-        self.eyelink.doTrackerSetup()
+        # self.eyelink.doTrackerSetup()
         # Set the configuration from the config dictionary
         for key, value in self.params["AutoConfig"].items():
             self.eyelink.sendCommand(f"{key} = {value}")
@@ -144,14 +139,14 @@ class MyeLink:
         mode = self.eyelink.getCurrentMode()
         if mode != pylink.IN_IDLE_MODE:
             # Stop recording if it is still recording
-            if self.eyelink.isRecording():
+            rec = self.eyelink.isRecording()
+            if rec == pylink.TRIAL_OK:
                 self.delay()
                 self.eyelink.stopRecording()
                 self.delay()
                 self.codex_msg("rec", "stop")
             # Set the tracker to offline mode
             self.eyelink.setOfflineMode()
-            self.eyelink.waitForModeReady(self.params["wait_time"])
             self.codex_msg("idle", "init")
 
     def set_calibration_graphics(self, width, height, graphics_env):
@@ -188,7 +183,6 @@ class MyeLink:
         """
         # Record samples and events and save to file and send over link
         self.eyelink.startRecording(1, 1, 1, 1)
-        self.eyelink.waitForModeReady(self.params["wait_time"])
         pylink.beginRealTimeMode(self.params["wait_time"])
         # wait for link data to arrive
         try:
@@ -244,13 +238,12 @@ class MyeLink:
             # Start the calibration
             self.codex_msg("calib", "init")
             self.eyelink.doTrackerSetup()
-            self.eyelink.waitForModeReady(self.params["wait_time"])
-            err = self.eyelink.getCalibrationMessage()
-            if err == "OK_REPLY":
+            res = self.eyelink.getCalibrationMessage()
+            if res[-1] == 0:
                 return self.codex_msg("calib", "ok")
             else:
-                self.codex_msg("calib", "fail")
-                return err
+                self.codex_msg("calib", "bad")
+                return res
         except RuntimeError as err:
             self.eyelink.exitCalibration()
             self.codex_msg("calib", "fail")
@@ -285,7 +278,7 @@ class MyeLink:
                 return msg
             except RuntimeError as err:
                 self.codex_msg("file", "fail")
-                self.eyelink.closeGraphics()
+                pylink.eyelink.closeGraphics()
                 self.eyelink.close()
                 return err
 
@@ -361,23 +354,16 @@ class MyeLink:
 
             # Perform drift correction
             try:
-                self.eyelink.startDriftCorrect(fx, fy)
-                self.eyelink.waitForModeReady(self.params["wait_time"])
                 err = self.eyelink.doDriftCorrect(fx, fy, 1, 0)
                 # break if successful
                 if err != pylink.ESC_KEY:
-                    res = self.eyelink.getCalibrationMessage()
-                    if res == "OK_REPLY":
-                        self.eyelink.applyDriftCorrect()
-                        return self.codex_msg("drift", "ok")
-                    else:
-                        self.codex_msg("drift", "fail")
-                        return res
-                else:
-                    return self.codex_msg("drift", "term")
+                    # self.eyelink.applyDriftCorrect()
+                    break
             except RuntimeError as err:
                 self.codex_msg("drift", "fail")
                 return err
+            
+        return self.codex_msg("drift", "ok")
 
     def check_sample_rate(self):
         """
