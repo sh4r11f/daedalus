@@ -239,6 +239,9 @@ class MyeLink:
             self.codex_msg("calib", "init")
             self.eyelink.doTrackerSetup()
             res = self.eyelink.getCalibrationMessage()
+            if self.dummy:
+                return self.codex_msg("calib", "ok")
+
             if res[-1] == 0:
                 return self.codex_msg("calib", "ok")
             else:
