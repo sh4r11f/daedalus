@@ -576,7 +576,7 @@ class PsychoPhysicsExperiment:
         self.stim_data_file = stim_file
         self.stim_data = pd.DataFrame(columns=[
             "BlockID", "BlockName", "BlockDuration_sec",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_fr",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
         ])
 
     def init_behav_data(self):
@@ -591,7 +591,7 @@ class PsychoPhysicsExperiment:
         self.behav_data_file = behav_file
         self.behav_data = pd.DataFrame(columns=[
             "BlockID", "BlockName", "BlockDuration_sec",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_fr",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
         ])
 
     def init_block_data(self):
