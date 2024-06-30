@@ -503,7 +503,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is within the circle or not.
         """
-        offset = utils.get_hypot(gaze, center)
+        offset = utils.get_hypotenus(gaze, center)
         if offset < radius:
             return True
         else:
@@ -546,13 +546,18 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is established or not.
         """
-        fix_event = {"fixation_start": pylink.STARTFIX, "fixation_update": pylink.FIXUPDATE}
+        # Setup
+        fix_event = {"fixation_start": pylink.STARTFIX}
         fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
         if fix is None:
             fix = self.fix_stim
+        tout = self.exp_params["General"]["fixation_timeout"]
+
+        # Look for fixation
         start_time = self.trial_clock.getTime()
         while True:
-            if self.trial_clock.getTime() - start_time > self.exp_params["General"]["fixation_timeout"]:
+
+            if self.trial_clock.getTime() - start_time > tout:
                 msg = self.tracker.codex_msg("fix", "timeout")
                 self.trial_error(msg)
                 return msg
@@ -567,19 +572,17 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 self.trial_error(events)
                 return msg
 
-            fixations = []
             for event in events:
-                # Only take the last fixation
+                # get the gaze data
                 gaze_x = event["gaze_start_x"]
                 gaze_y = event["gaze_start_y"]
+
+                # Check if the gaze is within the fixation
                 gx, gy = self.mat2cart(gaze_x, gaze_y)
                 if method == "circle":
                     valid = self.gaze_in_circle((gx, gy), fix.pos, fix_radi)
-                elif method == "square":
-                    valid = self.gaze_in_square((gx, gy), fix.pos, fix_radi)
                 else:
-                    raise NotImplementedError("Only circle and square methods are implemented.")
-                
+                    valid = self.gaze_in_square((gx, gy), fix.pos, fix_radi)
                 if valid:
                     msg = self.tracker.codex_msg("fix", "ok")
                     self.trial_info(msg)
@@ -604,59 +607,68 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is established or not.
         """
+        # Setup
+        status = None
         fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
+        if fix_pos is None:
+            fix_pos = self.fix_stim.pos
+
+        # Get events
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
         events = self.tracker.process_events_online(fix_events)
-        status = None
-
         # Check if there was an error
         if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.trial_error(events)
-            return events, None
+            return status, events
 
         # Process the events
-        if fix_pos is None:
-            fix_pos = self.fix_stim.pos
-        updates = []
-        for event in events:
-            gaze_x = event["gaze_avg_x"]
-            gaze_y = event["gaze_avg_y"]
-            gx, gy = self.mat2cart(gaze_x, gaze_y)
-            if method == "circle":
-                check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
-            elif method == "square":
-                check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
-            else:
-                raise NotImplementedError("Method is not implemented.")
-            updates.append(check)
-
-        # Check if all fixation is valid
-        if len(updates) > 0:
-            if all(updates):
-                status = self.codex.message("fix", "ok")
-                self.trial_debug(status)
-            else:
-                status = self.codex.message("fix", "bad")
-                self.trial_error(status)
-                self.tracker.direct_msg(status, delay=False)
+        if events:
+            for event in events:
+                # get gaze data
+                gaze_x = event["gaze_avg_x"]
+                gaze_y = event["gaze_avg_y"]
+                gx, gy = self.mat2cart(gaze_x, gaze_y)
+                # check if gaze is within the fixation
+                if method == "circle":
+                    valid = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
+                else:
+                    valid = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
+                # check if fixation is valid
+                if not valid:
+                    status = self.codex.message("fix", "bad")
+                    self.trial_error(status)
+                    self.tracker.direct_msg(status, delay=False)
+                    break
+                else:
+                    status = self.codex.message("fix", "ok")
         else:
             status = self.codex.message("fix", "null")
             self.trial_debug(status)
 
         return status, events
 
-    def monitor_saccade(self, targets_pos, fix_pos=None, fix_method="circle"):
+    def find_saccade(self, target_positions=None, fix_pos=None, fix_method="circle"):
         """
         Look for saccade.
 
         Args:
-            targets_pos (list): The position of the target.
+            target_positions (list): The position of the target.
             fix_pos (tuple): The position of the fixation. If None, the position of fixation stimulus is used.
             fix_method (str): The method to use for fixation.
 
         Returns:
             bool: Whether the fixation is established or not.
         """
+        # Setup
+        status = None
+        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
+        sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"], self.monitor)
+        if fix_pos is None:
+            fix_pos = self.fix_stim.pos
+        if target_positions is None:
+            target_positions = [stim.pos for stim in self.saccade_targets]
+
+        # Get events
         mon_events = {
             "fixation_update": pylink.FIXUPDATE,
             "fixation_end": pylink.ENDFIX,
@@ -664,68 +676,59 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "saccade_end": pylink.ENDSACC
         }
         events = self.tracker.process_events_online(mon_events)
-
         # Check if there was an error
         if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.trial_error(events)
-            return events, None
+            return status, events
 
-        # Check if the fixated and if it is valid
-        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
-        if fix_pos is None:
-            fix_pos = self.fix_stim.pos
-        updates = []
-        landings = []
-        sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"], self.monitor)
-        sacc = False
-        for event in events:
-            if event["event_type"] == "fixation_update":
-                gaze_x = event["gaze_avg_x"]
-                gaze_y = event["gaze_avg_y"]
-                gx, gy = self.mat2cart(gaze_x, gaze_y)
-                if fix_method == "circle":
-                    check = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
-                elif fix_method == "square":
-                    check = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
-                else:
-                    raise NotImplementedError("Method is not implemented.")
-                updates.append(check)
-            elif event["event_type"] == "saccade_start":
-                sacc = True
-            elif event["event_type"] == "saccade_end":
-                gaze_x = event["gaze_end_x"]
-                gaze_y = event["gaze_end_y"]
-                gp = self.mat2cart(gaze_x, gaze_y)
-                # check if close to target(s)
-                for tp in targets_pos:
-                    check = self.gaze_in_circle(gp, tp, sacc_radi)
-                    landings.append(check)
-
-        # Check if saccade is valid
-        if landings:
-            if any(landings):
-                msg = self.codex.message("sacc", "good")
-                self.trial_info(msg)
-                self.tracker.direct_msg(msg, delay=False)
-            else:
-                msg = self.codex.message("sacc", "bad")
-                self.trial_warning(msg)
-                self.tracker.direct_msg(msg, delay=False)
-        elif sacc:
-            msg = self.codex.message("sacc", "onset")
-            self.trial_info(msg)
-            self.tracker.direct_msg(msg, delay=False)
+        # Find event types that are found
+        if events:
+            # Process events
+            # If there is a saccade end, then it should override fixation update
+            # Because it has happened after fixating on the fixation point, but we might get
+            # updates after the saccade end too when the target is fixated (?). We don't want
+            # to process the validity of those updates.
+            # Fixation end and saccade start are not processed here and are saved for later use
+            for event in events:
+                if event["event_type"] == "fixation_update":
+                    gaze_x = event["gaze_avg_x"]
+                    gaze_y = event["gaze_avg_y"]
+                    gx, gy = self.mat2cart(gaze_x, gaze_y)
+                    if fix_method == "circle":
+                        valid = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
+                    else:
+                        valid = self.gaze_in_square((gx, gy), fix_pos, fix_radi)
+                    if not valid:
+                        status = self.codex.message("fix", "bad")
+                        self.trial_error(status)
+                        self.tracker.direct_msg(status, delay=False)
+                        break
+                    else:
+                        status = self.codex.message("fix", "ok")
+                elif event["event_type"] == "saccade_end":
+                    gaze_x = event["gaze_end_x"]
+                    gaze_y = event["gaze_end_y"]
+                    gx, gy = self.mat2cart(gaze_x, gaze_y)
+                    # check if close to target(s)
+                    landings = []
+                    for tp in target_positions:
+                        if fix_method == "circle":
+                            valid = self.gaze_in_circle((gx, gy), tp, sacc_radi)
+                        else:
+                            valid = self.gaze_in_square((gx, gy), tp, sacc_radi)
+                        landings.append(valid)
+                    if any(landings):
+                        status = self.codex.message("sacc", "good")
+                    else:
+                        status = self.codex.message("sacc", "bad")
+                        self.trial_error(status)
+                        self.tracker.direct_msg(status, delay=False)
+                    break
         else:
-            # Check if fixation is valid
-            if updates and all(updates):
-                msg = self.codex.message("fix", "ok")
-                self.trial_info(msg)
-            else:
-                msg = self.codex.message("fix", "lost")
-                self.trial_warning(msg)
-                self.tracker.direct_msg(msg, delay=False)
+            status = self.codex.message("sacc", "null")
+            self.trial_debug(status)
 
-        return msg, events
+        return status, events
 
     def init_events_data(self):
         """
@@ -972,3 +975,45 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.logger.info("Bye Bye Experiment.")
             self.logger.close_file()
             core.quit()
+
+    @staticmethod
+    def trial2tracker_time(target_time, tracker_frames, trial_frames):
+        """
+        Convert trial time to tracker time.
+
+        Args:
+            target_time (float): target time
+            tracker_frames (np.array): tracker frame times
+            trial_frames (np.array): trial frame times
+
+        Returns:
+            tuple: frame index, tracker time
+        """
+        # Find the frame index closest to the target time
+        frame_idx = np.argmin(np.abs(trial_frames - target_time))
+
+        # Find the tracker time at that frame
+        tracker_time = tracker_frames[frame_idx]
+
+        return frame_idx, tracker_time
+
+    @staticmethod
+    def tracker2trial_time(target_time, tracker_frames, trial_frames):
+        """
+        Convert tracker time to experiment time.
+
+        Args:
+            target_time (float): target time
+            tracker_frames (np.array): tracker frames
+            trial_frames (np.array): trial
+
+        Returns:
+            tuple: frame index, trial time
+        """
+        # Find the closest frame
+        frame_idx = np.argmin(np.abs(tracker_frames - target_time))
+
+        # Find the corresponding trial time
+        trial_time = trial_frames[frame_idx]
+
+        return frame_idx, trial_time

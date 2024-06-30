@@ -25,7 +25,7 @@ import numpy as np
 import pylink
 from psychopy.tools.monitorunittools import deg2pix
 
-from daedalus.utils import get_hypot
+from daedalus.utils import get_hypotenus
 from daedalus.codes import Codex
 
 
@@ -784,7 +784,7 @@ class MyeLink:
 
                     # break the while loop if the current gaze position in the target region
                     if (gaze_x is not None) and (gaze_y is not None):
-                        offset = get_hypot(target_x, target_y, gaze_x, gaze_y)
+                        offset = get_hypotenus(target_x, target_y, gaze_x, gaze_y)
                         if offset < region_radius:
                             # start recording the gaze duration if not already started
                             if (not in_region) and (gaze_start_time == -1):
@@ -836,7 +836,7 @@ class MyeLink:
                 gaze_x, gaze_y = self.get_eye_gaze_pos(self.params["eye"], current_sample)
                 if (gaze_x is not None) and (gaze_y is not None):
                     # See if the current gaze position is in a region around the screen centered
-                    offset = get_hypot(target_x, target_y, gaze_x, gaze_y)
+                    offset = get_hypotenus(target_x, target_y, gaze_x, gaze_y)
                     fixating = offset < valid_radius
 
                     # Save the fixation information
@@ -954,7 +954,7 @@ class MyeLink:
 
                         # Check hit region and set accuracy
                         # if np.fabs(land_err[0]) < acc_region and np.fabs(land_err[1]) < acc_region:
-                        if self.get_hypot(sac_end_pos, [target_x, target_y]) < valid_radius:
+                        if get_hypotenus(sac_end_pos, [target_x, target_y]) < valid_radius:
                             acc = 1
                         else:
                             acc = 0

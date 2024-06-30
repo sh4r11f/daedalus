@@ -1311,6 +1311,8 @@ class PsychoPhysicsExperiment:
         Converts cycles per second to degrees per second:
             cps (cycles/s) * 1/cpd (dva/cycles) = dps (dva/s)
 
+            (v = lambda * f)
+
         Args:
             cps (float): Cycles per second (temporal frequency).
             cpd (float): Cycles per degree (spatial frequency).
@@ -1378,11 +1380,31 @@ class PsychoPhysicsExperiment:
         ppd = deg2pix(1, self.monitor)
         return cpp * ppd
 
-    def time_point_to_frame_idx(self, time, frame_times):
+    def time_index_from_sum(self, time_point, frame_times):
+        """
+        Find the frame number for a given time by cumulatively summing the frame times.
+
+        Args:
+            time_point (float): The time point to find the frame number for.
+            frame_times (array): The frame times.
+
+        Returns:
+            int: The frame number.
+        """
+        return np.argmax(np.cumsum(frame_times) > time_point)
+
+    def time_index(self, time_point, frame_times):
         """
         Find the frame number for a given time.
+
+                Args:
+            time_point (float): The time point to find the frame number for.
+            frame_times (array): The frame times.
+
+        Returns:
+            int: The frame number.
         """
-        return np.argmax(np.cumsum(frame_times) > time)
+        return np.argmax(frame_times > time_point)
 
     @staticmethod
     def period_edge_frames(frames, period):

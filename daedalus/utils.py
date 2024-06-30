@@ -83,7 +83,7 @@ def find_in_configs(dicts: list, key: str, value: str):
             return d
 
 
-def get_hypot(point_a, point_b):
+def get_hypotenus(point_a, point_b):
     """
     Calculate the Euclidean distance between two points in a 2D plane.
 
@@ -94,12 +94,10 @@ def get_hypot(point_a, point_b):
     Returns:
         float: The Euclidean distance between the two points.
     """
-    ax, ay = point_a
-    bx, by = point_b
-    xdiff = np.fabs(ax - bx)
-    ydiff = np.fabs(ay - by)
+    ax, ay = np.fabs(point_a)
+    bx, by = np.fabs(point_b)
 
-    return np.hypot(xdiff, ydiff)
+    return np.hypot((ax - bx), (ay - by))
 
 
 def get_caller():
