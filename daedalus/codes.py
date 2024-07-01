@@ -53,6 +53,7 @@ class Codex:
             "usr": 22,
             "sacc": 23,
             "rew": 24,
+            "sub": 25,
         }
         self.state_codes = {
             "init": 0.0,
@@ -72,6 +73,7 @@ class Codex:
             "offset": 0.05,
             "per": 0.06,
             "null": 0.07,
+            "dup": 0.08,
         }
         self.proc_names = {
             "con": "CONNECTION",
@@ -100,7 +102,8 @@ class Codex:
             "iti": "INTER_TRIAL_INTERVAL",
             "usr": "USER",
             "sacc": "SACCADE",
-            "rew": "REWARD"
+            "rew": "REWARD",
+            "sub": "SUBJECT"
         }
         self.state_names = {
             "init": "START",
@@ -120,6 +123,7 @@ class Codex:
             "offset": "OFFSET",
             "per": "PERIOD",
             "null": "NULL",
+            "dup": "DUPLICATE"
         }
 
     def code(self, proc, state):
