@@ -149,3 +149,17 @@ def str2tuple(string):
     """
     # Clean the string
     return tuple(map(int, string.replace(" ", "")[1:-1].split(",")))
+
+
+def time_index_from_sum(time_point, frame_times):
+    """
+    Find the frame number for a given time by cumulatively summing the frame times.
+
+    Args:
+        time_point (float): The time point to find the frame number for.
+        frame_times (array): The frame times.
+
+    Returns:
+        int: The frame number.
+    """
+    return np.argmax(np.cumsum(frame_times) > time_point)

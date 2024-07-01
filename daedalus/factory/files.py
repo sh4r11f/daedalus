@@ -19,6 +19,7 @@
 #
 # =================================================================================================== #
 from pathlib import Path
+import re
 
 
 class FileManager:
@@ -54,6 +55,8 @@ class FileManager:
         self.frames = None
         self.eye_events = None
         self.eye_samples = None
+        self.edf_display = None
+        self.edf_host = None
 
     def add_session(self, sub_id, ses_id):
 
@@ -71,11 +74,64 @@ class FileManager:
 
     def add_block(self, sub_id, ses_id, task_id, block_id):
 
-        fname = f"sub-{sub_id}_ses-{ses_id}_task-{task_id}_block-{block_id}_behavioral.csv"
+        errors = []
+        pre_name = f"sub-{sub_id}_ses-{ses_id}_task-{task_id}_block-{block_id}"
+        fname = pre_name + "_behavior.csv"
         behav_file = self.dirs.ses / fname
         if behav_file.exists():
             behav_file.rename(behav_file.with_suffix(".BAK"))
-            return self.codex.message("data", "dup")
+            errors.append(f"Behavioral file {fname} already exists. Renamed to {fname}.BAK")
+
+        fname = pre_name + "_stimuli.csv"
+        stim_file = self.dirs.ses / fname
+        if stim_file.exists():
+            stim_file.rename(stim_file.with_suffix(".BAK"))
+            errors.append(f"Stimuli file {fname} already exists. Renamed to {fname}.BAK")
+
+        fname = pre_name + "_frames.csv"
+        frame_file = self.dirs.ses / fname
+        if frame_file.exists():
+            frame_file.rename(frame_file.with_suffix(".BAK"))
+            errors.append(f"Frames file {fname} already exists. Renamed to {fname}.BAK")
+
+        fname = pre_name + "_EyeEvents.csv"
+        eye_event_file = self.dirs.ses / fname
+        if eye_event_file.exists():
+            eye_event_file.rename(eye_event_file.with_suffix(".BAK"))
+            errors.append(f"Eye events file {fname} already exists. Renamed to {fname}.BAK")
+
+        fname = pre_name + "_EyeSamples.csv"
+        eye_sample_file = self.dirs.ses / fname
+        if eye_sample_file.exists():
+            eye_sample_file.rename(eye_sample_file.with_suffix(".BAK"))
+            errors.append(f"Eye samples file {fname} already exists. Renamed to {fname}.BAK")
+
+        fname = pre_name + "_EDFDisplay.csv"
+        edf_display_file = self.dirs.ses / fname
+        if edf_display_file.exists():
+            edf_display_file.rename(edf_display_file.with_suffix(".BAK"))
+            errors.append(f"EDF display file {fname} already exists. Renamed to {fname}.BAK")
+
+        edf_host_file = f"{sub_id}_{ses_id}_{block_id}.edf"
+
+        self.behavior = behav_file
+        self.stim_data = stim_file
+        self.frames = frame_file
+        self.eye_events = eye_event_file
+        self.eye_samples = eye_sample_file
+        self.edf_display = edf_display_file
+        self.edf_host = edf_host_file
+
+        return errors
+
+    def remove_block_from_names(self):
+
+        self.behavior = re.sub(r"_block-\d+", "", self.behavior)
+        self.stim_data = re.sub(r"_block-\d+", "", self.stim_data)
+        self.frames = re.sub(r"_block-\d+", "", self.frames)
+        self.eye_events = re.sub(r"_block-\d+", "", self.eye_events)
+        self.eye_samples = re.sub(r"_block-\d+", "", self.eye_samples)
+        self.edf_display = re.sub(r"_block-\d+", "", self.edf_display)
 
 
 class DirectoryManager:

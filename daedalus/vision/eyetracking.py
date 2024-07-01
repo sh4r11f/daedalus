@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from .psyphy import PsychoPhysicsExperiment
+from daedalus.factory import TrialFactory
 from daedalus.devices.myelink import MyeLink
 from daedalus import utils
 
@@ -45,8 +46,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self,
         root,
         platform: str,
-        debug: bool,
-        tracker_model: str = "Eyelink1000Plus"
+        debug: bool
     ):
         # Setup
         super().__init__(root, platform, debug)
@@ -54,31 +54,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.exp_type = "eyetracking"
 
         # Tracker
-        self.tracker_model = tracker_model
-        self.tracker_params = None
         self.tracker = None
         self.genv = None
-
-        # Files
-        self.events_data_file = None
-        self.samples_data_file = None
-        self.edf_display_file = None
-        self.edf_host_file = None
-
-        # Data
-        self.events_data = None
-        self.samples_data = None
-        self.edf_display_file = None
-        self.edf_host_file = None
 
     def init_tracker(self):
         """
         Initialize the eye tracker.
         """
         # Connect to the eye tracker
-        conf_file = self.root / "config" / "eyetrackers.yaml"
-        self.tracker_params = utils.read_config(conf_file)[self.tracker_model]
-        self.tracker = MyeLink(self.name, self.tracker_model, self.tracker_params, self.debug)
+        self.tracker = MyeLink(self.name, self.settings.tracker, self.debug)
         self.tracker.go_offline()
         self.tracker.configure(display_name=self.platform)
 
@@ -113,7 +97,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.go_offline()
 
         # Show block info as text
-        n_blocks = f"{len(self.all_blocks):02d}"
+        n_blocks = f"{len(self.blocks.n_total):02d}"
         if repeat:
             msg = f"You are repeating block {self.block_id}/{n_blocks}"
             calib = True
@@ -154,9 +138,21 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.show_msg("\n\n".join(msg_))
 
         # Reset the block clock
-        self.block_clock.reset()
+        self.timer.start_block()
         # Initialize the block data
-        self.init_block_data()
+        errors = self.files.add_block()
+        if errors:
+            for e in errors:
+                self.block_warning(e)
+
+        # Data
+        self.data.init_stimuli()
+        self.data.init_behavior()
+        self.data.init_frames()
+        self.data.init_eye_events()
+        self.data.init_eye_samples()
+        self.open_edf_file()
+
         # Log the start of the block
         self.block_info(self.codex.message("block", "init"))
         self.block_info(f"BLOCKID_{self.block_id}")
@@ -174,12 +170,13 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             bool: Whether to recalibrate or not.
         """
         self.trial_id = self._fix_id(trial_id)
+        self.trial = TrialFactory(self.trial_id)
         self.tracker.eyelink.terminalBreak(0)
 
         # Establish fixation
         if self.debug:
             recalib = False
-            self.trial_clock = core.MonotonicClock()
+            self.timer.start_trial()
             self.trial_debug(self.codex.message("trial", "init"))
             self.trial_debug(f"TRIALID_{self.trial_id}")
         else:
@@ -194,7 +191,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 on_status = self.tracker.come_online()
                 if on_status == self.codex.message("rec", "init"):
                     self.trial_info(on_status)
-                    self.trial_clock = core.MonotonicClock()
+                    self.timer.start_trial()
                     self.trial_info(f"TRIALID_{self.trial_id}")
                     self.tracker.direct_msg(f"TRIALID {self.trial_id}")
                     self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}, Trial {self.trial_id}.'")
@@ -314,8 +311,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         super().wrap_block()
 
         # Save the data
-        self.save_events_data()
-        self.save_samples_data()
+        self.data.save_eye_events(self.files.eye_events, self.block_id)
+        self.data.save_eye_samples(self.files.eye_samples, self.block_id)
 
     def stop_block(self):
         """
@@ -341,7 +338,23 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             # Log
             self.logger.error(status)
-        super().turn_off()
+
+        self.logger.info(self.codex.message("ses", "fin"))
+        msg = f"You did it. Session {self.ses_id} of the experiment is over."
+        msg += "\n\nThank you!"
+        self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["duration"], msg_type="info")
+        # Save
+        self.data.participants["Completed"] = pd.to_datetime(self.participants["Completed"])
+        self.data.update_participant("Completed", 1)
+        self.data.save_participants(self.files["participants"])
+        self.files.remove_block_from_names()
+        self.data.save_stimuli(self.files.stim_data)
+        self.data.save_behavioral(self.file.behavior)
+        self.data.save_frames(self.files.frames)
+        self.data.save_eye_events(self.files.eye_events)
+        self.data.save_eye_samples(self.files.eye_samples)
+        # Quit
+        self.goodbye()
 
     def run_calibration(self, msg=None):
         """
@@ -448,21 +461,21 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         # Window
         # Eye tracking experiments always use pixel measurements.
-        self.window.units = 'pix'
+        self.display.window.units = 'pix'
         # NOTE: If we don't do this early, the eyetracker will override it and we always get a grey background.
-        self.window.color = utils.str2tuple(self.stim_params["Display"]["background_color"])
+        self.display.window.color = utils.str2tuple(self.settings.stimuli["Display"]["background_color"])
 
         # Configure a graphics environment (genv) for tracker calibration
-        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker.eyelink, self.window)
+        genv = EyeLinkCoreGraphicsPsychoPy(self.tracker.eyelink, self.display.window)
 
         # Set background and foreground colors for the calibration target
-        foreground_color = utils.str2tuple(self.tracker_params["Calibration"]["target_color"])
-        background_color = utils.str2tuple(self.tracker_params["Calibration"]["background_color"])
+        foreground_color = utils.str2tuple(self.settings.tracker["Calibration"]["target_color"])
+        background_color = utils.str2tuple(self.settings.tracker["Calibration"]["background_color"])
         genv.setCalibrationColors(foreground_color, background_color)
 
         # Set up the calibration target
         genv.setTargetType('circle')
-        genv.setTargetSize(deg2pix(self.tracker_params["Calibration"]["target_size"], self.monitor))
+        genv.setTargetSize(deg2pix(self.settings.tracker["Calibration"]["target_size"], self.display.monitor))
 
         # Set up the calibration sounds
         genv.setCalibrationSounds("", "", "")
@@ -520,7 +533,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             tuple: The centered coordinates.
         """
-        return x - self.window.size[0] / 2, self.window.size[1] / 2 - y
+        return x - self.display.window.size[0] / 2, self.display.window.size[1] / 2 - y
 
     def cart2mat(self, x, y):
         """
@@ -533,7 +546,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             tuple: The matrix coordinates.
         """
-        return self.window.size[0] / 2 + x, self.window.size[1] / 2 - y
+        return self.display.window.size[0] / 2 + x, self.display.window.size[1] / 2 - y
 
     def establish_fixation(self, method="circle", fix=None):
         """
@@ -548,23 +561,22 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         # Setup
         fix_event = {"fixation_start": pylink.STARTFIX}
-        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
+        fix_radi = deg2pix(self.settings.exp["General"]["valid_fixation_radius"], self.monitor)
         if fix is None:
-            fix = self.fix_stim
-        tout = self.exp_params["General"]["fixation_timeout"]
+            fix = self.stimuli.fix
+        tout = self.settings.exp["General"]["fixation_timeout"]
 
         # Look for fixation
-        start_time = self.trial_clock.getTime()
+        start_time = self.timer.trial.getTime()
         while True:
 
-            if self.trial_clock.getTime() - start_time > tout:
+            if self.timer.trial.getTime() - start_time > tout:
                 msg = self.tracker.codex_msg("fix", "timeout")
                 self.trial_error(msg)
                 return msg
 
             # Draw fixation
-            fix.draw()
-            self.window.flip()
+            self.display.show(fix)
 
             # Check eye events
             events = self.tracker.process_events_online(fix_event)
@@ -588,13 +600,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                     self.trial_info(msg)
                     return msg
 
-    def reboot_tracker(self):
-        """
-        """
-        self._warn("Rebooting the tracker...")
-        self.tracker.reset()
-        self.tracker.connect()
-
     def monitor_fixation(self, fix_pos=None, method="circle"):
         """
         Monitor fixation.
@@ -609,9 +614,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         # Setup
         status = None
-        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
+        fix_radi = deg2pix(self.settings.exp["General"]["valid_fixation_radius"], self.monitor)
         if fix_pos is None:
-            fix_pos = self.fix_stim.pos
+            fix_pos = self.stimuli.fix.pos
 
         # Get events
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
@@ -661,12 +666,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         # Setup
         status = None
-        fix_radi = deg2pix(self.exp_params["General"]["valid_fixation_radius"], self.monitor)
-        sacc_radi = deg2pix(self.exp_params["General"]["valid_saccade_radius"], self.monitor)
+        fix_radi = deg2pix(self.settings.exp["General"]["valid_fixation_radius"], self.monitor)
+        sacc_radi = deg2pix(self.settings.exp["General"]["valid_saccade_radius"], self.monitor)
         if fix_pos is None:
-            fix_pos = self.fix_stim.pos
+            fix_pos = self.stimuli.fix.pos
         if target_positions is None:
-            target_positions = [stim.pos for stim in self.saccade_targets]
+            target_positions = [stim.pos for stim in self.trial.sacc_target_positions]
 
         # Get events
         mon_events = {
@@ -730,53 +735,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         return status, events
 
-    def init_events_data(self):
-        """
-        """
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeEvents.csv"
-        events_file = self.ses_data_dir / fname
-        if events_file.exists():
-            self.block_warning(f"File {events_file} already exists. Renaming the file as backup.")
-            backup_file = events_file.with_suffix(".BAK")
-            events_file.rename(backup_file)
-        self.events_data_file = events_file
-        self.events_data = pd.DataFrame(columns=[
-            "BlockID", "BlockName", "TrialIndex", "TrialNumber",
-            "TrackerLag", "EventType",
-            "EventStart_ExpTime_ms", "EventStart_TrackerTime_ms", "EventStart_FrameN",
-            "EventEnd_ExpTime_ms", "EventEnd_TrackerTime_ms", "EventEnd_FrameN",
-            "EventDuration_ms", "EventDuration_fr", "Event_Period",
-            "GazeStartX_px", "GazeStartX_ppd", "GazeStartX_dva",
-            "GazeStartY_px", "GazeStartY_ppd", "GazeStartY_dva",
-            "GazeEndX_px", "GazeEndX_ppd", "GazeEndX_dva",
-            "GazeEndY_px", "GazeEndY_ppd", "GazeEndY_dva",
-            "GazeAvgX_px", "GazeAvgX_ppd", "GazeAvgX_dva",
-            "GazeAvgY_px", "GazeAvgY_ppd", "GazeAvgY_dva",
-            "AmplitudeX_dva", "AmplitudeY_dva",
-            "PupilStart_area", "PupilEnd_area", "PupilAvg_area",
-            "VelocityStart_dps", "VelocityEnd_dps", "VelocityAvg_dps", "VelocityPeak_dps",
-            "Angle_deg", "Angle_rad",
-        ])
-
-    def init_samples_data(self):
-        """
-        """
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}_EyeSamples.csv"
-        samples_file = self.ses_data_dir / fname
-        if samples_file.exists():
-            self.block_warning(f"File {samples_file} already exists. Renaming the file as backup.")
-            backup_file = samples_file.with_suffix(".BAK")
-            samples_file.rename(backup_file)
-        self.samples_data_file = samples_file
-        self.samples_data = pd.DataFrame(columns=[
-            "BlockID", "BlockName", "TrialIndex", "TrialNumber", "TaskPeriod",
-            "TrackerLag", "SampleIndex", "SampleEvent",
-            "SampleOnset_ExpTime_ms", "SampleOnset_TrackerTime_ms", "SampleOnset_FrameN",
-            "GazeX_px", "GazeX_ppd", "GazeX_dva",
-            "GazeY_px", "GazeY_ppd", "GazeY_dva",
-            "Pupil_area",
-        ])
-
     def add_to_events_dataframe(self, data: dict, tracker_lag: float):
         """
         Add a dictionary of data to the events dataframe.
@@ -789,9 +747,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             pd.DataFrame: The updated dataframe.
         """
         df = pd.DataFrame()
-        df["BlockID"] = self.block_id
-        df["BlockName"] = self.all_blocks[int(self.block_id)-1]["name"]
-        df["TrialNumber"] = self.trial_id
+        df["BlockID"] = self.task.block.id
+        df["BlockName"] = self.task.block.name
+        df["TrialNumber"] = self.task.trial.id
         tidx = int(self.trial_id) - 1
         df["TrialIndex"] = tidx
         df["TrackerLag"] = tracker_lag
@@ -801,18 +759,18 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         if ts is not None:
             df["EventStart_TrackerTime_ms"] = ts
             df["EventStart_TrialTime_ms"] = ts - tracker_lag
-            frame_n = self.time_point_to_frame_idx(ts, self.window.frameIntervals)
+            frame_n = utils.time_index_from_sum(ts, self.window.frameIntervals)
             df["EventStart_FrameN"] = frame_n
 
             vec_coder = np.vectorize(self.codex.get_proc_name)
-            df["EventStart_Period"] = vec_coder(self.block_frames[tidx, frame_n])
+            df["EventStart_Period"] = vec_coder(self.task.block.trial.data[frame_n])
         te = data.get("time_end")
         if te is not None:
             df["EventEnd_TrackerTime_ms"] = te
             df["EventEnd_TrialTime_ms"] = te - tracker_lag
-            frame_n = self.time_point_to_frame_idx(te, self.window.frameIntervals)
+            frame_n = utils.time_index_from_sum(te, self.window.frameIntervals)
             df["EventEnd_FrameN"] = frame_n
-            df["EventEnd_Period"] = vec_coder(self.block_frames[tidx, frame_n])
+            df["EventEnd_Period"] = vec_coder(self.task.block.trial.data[frame_n])
         dur = data.get("duration")
         if dur is not None:
             df["EventDuration_ms"] = dur
@@ -822,123 +780,96 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         gsy = data.get("gaze_start_y")
         if gsx is not None and gsy is not None:
             gsx, gsy = self.mat2cart(gsx, gsy)
-            df["GazeStartX_px"] = self.val_round(gsx)
-            df["GazeStartY_px"] = self.val_round(gsy)
+            df["GazeStartX_px"] = gsx
+            df["GazeStartY_px"] = gsy
             ppdsx = data.get("ppd_start_x")
             ppdsy = data.get("ppd_start_y")
             if ppdsx is not None and ppdsy is not None:
-                df["GazeStartX_ppd"] = self.val_round(ppdsx)
-                df["GazeStartY_ppd"] = self.val_round(ppdsy)
+                df["GazeStartX_ppd"] = ppdsx
+                df["GazeStartY_ppd"] = ppdsy
                 gsx_dva = gsx / ppdsx
                 gsy_dva = gsy / ppdsy
-                df["GazeStartX_dva"] = self.val_round(gsx_dva)
-                df["GazeStartY_dva"] = self.val_round(gsy_dva)
+                df["GazeStartX_dva"] = gsx_dva
+                df["GazeStartY_dva"] = gsy_dva
         # end gaze
         gex = data.get("gaze_end_x")
         gey = data.get("gaze_end_y")
         if gex is not None and gey is not None:
             gex, gey = self.mat2cart(gex, gey)
-            df["GazeEndX_px"] = self.val_round(gex)
-            df["GazeEndY_px"] = self.val_round(gey)
+            df["GazeEndX_px"] = gex
+            df["GazeEndY_px"] = gey
             ppdex = data.get("ppd_end_x")
             ppdey = data.get("ppd_end_y")
             if ppdex is not None and ppdey is not None:
-                df["GazeEndX_ppd"] = self.val_round(ppdex)
-                df["GazeEndY_ppd"] = self.val_round(ppdey)
+                df["GazeEndX_ppd"] = ppdex
+                df["GazeEndY_ppd"] = ppdey
                 gex = gex / ppdex
                 gey = gey / ppdey
-                df["GazeEndX_dva"] = self.val_round(gex)
-                df["GazeEndY_dva"] = self.val_round(gey)
+                df["GazeEndX_dva"] = gex
+                df["GazeEndY_dva"] = gey
         # average gaze
         gavgx = data.get("gaze_avg_x")
         gavgy = data.get("gaze_avg_y")
         if gavgx is not None and gavgy is not None:
             gavgx, gavgy = self.mat2cart(gavgx, gavgy)
-            df["GazeAvgX_px"] = self.val_round(gavgx)
-            df["GazeAvgY_px"] = self.val_round(gavgy)
+            df["GazeAvgX_px"] = gavgx
+            df["GazeAvgY_px"] = gavgy
             ppdavgx = data.get("ppd_avg_x")
             ppdavgy = data.get("ppd_avg_y")
             if ppdavgx is not None and ppdavgy is not None:
-                df["GazeAvgX_ppd"] = self.val_round(ppdavgx)
-                df["GazeAvgY_ppd"] = self.val_round(ppdavgy)
+                df["GazeAvgX_ppd"] = ppdavgx
+                df["GazeAvgY_ppd"] = ppdavgy
                 gavgx_dva = gavgx / ppdavgx
                 gavgy_dva = gavgy / ppdavgy
-                df["GazeAvgX_dva"] = self.val_round(gavgx_dva)
-                df["GazeAvgY_dva"] = self.val_round(gavgy_dva)
+                df["GazeAvgX_dva"] = gavgx_dva
+                df["GazeAvgY_dva"] = gavgy_dva
         # amplitude
         ampx = data.get("amp_x")
         ampy = data.get("amp_y")
         if ampx is not None and ampy is not None:
-            df["AmplitudeX_dva"] = self.val_round(ampx)
-            df["AmplitudeY_dva"] = self.val_round(ampy)
+            df["AmplitudeX_dva"] = ampx
+            df["AmplitudeY_dva"] = ampy
         # angle
         ang = data.get("angle")
         if ang is not None:
-            df["Angle_deg"] = self.val_round(ang)
-            df["Angle_rad"] = self.val_round(np.radians(ang))
+            df["Angle_deg"] = ang
+            df["Angle_rad"] = np.radians(ang)
         # velocity
         sv = data.get("velocity_start")
         if sv is not None:
-            df["VelocityStart_dps"] = self.val_round(sv)
+            df["VelocityStart_dps"] = sv
         ev = data.get("velocity_end")
         if ev is not None:
-            df["VelocityEnd_dps"] = self.val_round(ev)
+            df["VelocityEnd_dps"] = ev
         avgv = data.get("velocity_avg")
         if avgv is not None:
-            df["VelocityAvg_dps"] = self.val_round(avgv)
+            df["VelocityAvg_dps"] = avgv
         pv = data.get("velocity_peak")
         if pv is not None:
-            df["VelocityPeak_dps"] = self.val_round(pv)
+            df["VelocityPeak_dps"] = pv
         # pupil
         ps = data.get("pupil_start")
         if ps is not None:
-            df["PupilStart_area"] = self.val_round(ps)
+            df["PupilStart_area"] = ps
         pe = data.get("pupil_end")
         if pe is not None:
-            df["PupilEnd_area"] = self.val_round(pe)
+            df["PupilEnd_area"] = pe
         avgp = data.get("pupil_avg")
         if avgp is not None:
-            df["PupilAvg_area"] = self.val_round(avgp)
+            df["PupilAvg_area"] = avgp
 
         # Concatenate the data
-        self.events_data = pd.concat([self.events_data, df], ignore_index=True)
+        return df
 
-    def init_edf_files(self):
+    def open_edf_file(self):
         """
         """
         # Display file
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_name}_block-{self.block_id}.edf"
-        edf_display_file = self.ses_data_dir / fname
-        if edf_display_file.exists():
-            self.block_warning(f"File {edf_display_file} already exists. Renaming the file as backup.")
-            edf_display_file.rename(edf_display_file.with_suffix(".BAK"))
-        self.edf_display_file = edf_display_file
-
-        # Host file
-        self.edf_host_file = f"{self.sub_id}_{self.ses_id}_{self.block_id}.edf"
-        status = self.tracker.open_edf_file(self.edf_host_file)
+        status = self.tracker.open_edf_file(self.files.edf_host)
         if status == self.codex.message("edf", "init"):
             self.block_info(status)
         else:
             self.block_error(status)
-
-    def init_block_data(self):
-        """
-        """
-        super().init_block_data()
-        self.init_events_data()
-        self.init_samples_data()
-        self.init_edf_files()
-
-    def save_events_data(self):
-        """
-        """
-        self.events_data.to_csv(self.events_data_file, sep=',', index=False)
-
-    def save_samples_data(self):
-        """
-        """
-        self.samples_data.to_csv(self.samples_data_file, sep=',', index=False)
 
     def goodbye(self, raise_error=None):
         """
@@ -949,7 +880,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             raise_error (str): The error message to raise.
         """
         # Close the window
-        self.window.close()
+        self.display.clear()
+        self.display.close()
 
         # Quit
         if raise_error is not None:
@@ -961,11 +893,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.logger.critical(raise_error)
             # Save as much as you can
             try:
-                self.save_stim_data()
-                self.save_behav_data()
-                self.save_frame_data()
-                self.save_events_data()
-                self.save_samples_data()
+                self.files.remove_block_from_names()
+                self.data.save_stimuli(self.files.stim_data)
+                self.data.save_behavioral(self.file.behavior)
+                self.data.save_frames(self.files.frames)
+                self.data.save_eye_events(self.files.eye_events)
+                self.data.save_eye_samples(self.files.eye_samples)
                 self.logger.close_file()
             except AttributeError as e:
                 print(f"Error saving data: {e}")

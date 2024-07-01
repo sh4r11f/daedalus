@@ -45,7 +45,6 @@ class SettingsManager:
         config_files = {
             "analysis": "analysis.yaml",
             "exp": "experiment.yaml",
-            "tracker": "eyetrackers.yaml",
             "schedules": "schedules.yaml",
             "stimuli": "stimuli.yaml"
         }
@@ -70,3 +69,11 @@ class SettingsManager:
             self.gamma = np.load(str(gamma_file))
         else:
             self.gamma = None
+
+        tracker_file = self.config_dir / "tracker.yaml"
+        tracker_name = self.platform["Tracker"]
+        if tracker_file.exists():
+            trackers = read_config(tracker_file)
+            self.tracker = trackers.get(tracker_name, None)
+        else:
+            self.tracker = None

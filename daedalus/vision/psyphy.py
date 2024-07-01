@@ -18,7 +18,7 @@
 #
 # ==================================================================================================== #
 from pathlib import Path
-from typing import Dict, Union, Tuple
+from typing import Union
 from datetime import date
 
 from emoji import emojize
@@ -26,14 +26,14 @@ from emoji import emojize
 import numpy as np
 import pandas as pd
 
-from psychopy import core, monitors, visual, event, info
+from psychopy import core, event, info
 from psychopy.tools.monitorunittools import deg2pix, pix2deg
 import psychopy.gui.qtgui as gui
 from psychopy.iohub.devices import Computer
 
 from daedalus.factory import (
-    FileManager, SettingsManager, DataManager,
-    StimulusFactory, DisplayFactory, TrialFactory
+    FileManager, SettingsManager, DataManager, TimeManager,
+    StimulusFactory, DisplayFactory, TaskFactory
 )
 from daedalus.codes import Codex
 from daedalus import log_handler, utils
@@ -102,20 +102,23 @@ class PsychoPhysicsExperiment:
         self.ses_id = None
         self.block_id = None
         self.trial_id = None
-        self.all_blocks = None
+        self.blocks = None
+        self.trials = None
 
         # Data
         self.data = DataManager(self.name, self.root, self.version)
 
         # Clocks
-        self.clock = core.clock()
+        self.timer = TimeManager()
 
     def init_session(self):
         """
         Starts up the experiment by initializing the settings, directories, files, logging, monitor, window, and clocks.
         """
-        # Ask for subject information
+        self.timer.start()
         self.data.load_participants(self.files.participants)
+
+        # Ask for subject information
         select, expert = self.hello_gui()
         if select == "Load":
             sub_info = self.subject_loadation_gui()
@@ -150,7 +153,7 @@ class PsychoPhysicsExperiment:
         self.data.add_participant(sub_info)
 
         # Stimuli and blocks and task
-        self.all_blocks = self.concatenated_blocks()
+        self.task = TaskFactory(self.settings.exp["Tasks"], self.task_id)
 
         # Save subject and log the start of the session
         self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
@@ -172,9 +175,10 @@ class PsychoPhysicsExperiment:
         """
         # Set the ID of the block
         self.block_id = self._fix_id(block_id)
+        self.task.set_block(block_id)
 
         # Show the start of the block message
-        n_blocks = f"{len(self.all_blocks):02d}"
+        n_blocks = f"{len(self.task.n_blocks):02d}"
         if repeat:
             txt = f"You are repeating block {self.block_id}/{n_blocks}.\n\n"
         else:
@@ -184,9 +188,15 @@ class PsychoPhysicsExperiment:
             resp = self.show_msg(txt)
             if (resp == "space") or (self.debug):
                 # Reset the block clock
-                self.block_clock.reset()
+                self.timer.start_block()
                 # Initialize the block data
-                self.init_block_data()
+                errors = self.files.add_block()
+                if errors:
+                    for e in errors:
+                        self.block_warning(e)
+                self.data.init_stimuli()
+                self.data.init_behavior()
+                self.data.init_frames()
                 # Log the start of the block
                 self.block_info(self.codex.message("block", "init"))
                 self.block_info(f"BLOCKID_{self.block_id}")
@@ -200,7 +210,8 @@ class PsychoPhysicsExperiment:
             trial_id (int): Trial number.
         """
         self.trial_id = self._fix_id(trial_id)
-        self.trial_clock = core.MonotonicClock()
+        self.task.set_trial(trial_id)
+        self.timer.start_trial()
         self.trial_info(self.codex.message("trial", "init"))
         self.trial_info(f"TRIALID_{self.trial_id}")
 
@@ -209,19 +220,19 @@ class PsychoPhysicsExperiment:
         Wrap up the trial.
         """
         self.trial_info(self.codex.message("trial", "fin"))
-        self.window.recordFrameIntervals = False
-        self.window.frameIntervals = []
-        self.clear_screen()
+        self.display.window.recordFrameIntervals = False
+        self.display.window.frameIntervals = []
+        self.display.clear()
 
     def stop_trial(self):
         """
         Stop the trial.
         """
         self.trial_warning(self.codex.message("trial", "stop"))
-        self.window.flip()
-        self.window.recordFrameIntervals = False
-        self.window.frameIntervals = []
-        self.clear_screen()
+        self.display.window.flip()
+        self.display.window.recordFrameIntervals = False
+        self.display.window.frameIntervals = []
+        self.clear()
 
     def wrap_block(self):
         """
@@ -231,9 +242,9 @@ class PsychoPhysicsExperiment:
         self.block_info(self.codex.message("block", "fin"))
 
         # Save the data
-        self.save_stim_data()
-        self.save_behav_data()
-        self.save_frame_data()
+        self.data.save_behavior(self.files.behavior, self.block_id)
+        self.data.save_stimuli(self.files.stim_data, self.block_id)
+        self.data.save_frames(self.files.frames, self.block_id)
 
         # Show the end of the block message
         if int(self.block_id):
@@ -242,7 +253,7 @@ class PsychoPhysicsExperiment:
             txt = emojize("Practice block is over :rocket:")
         txt += emojize("\n\nStay tuned...")
         self.show_msg(txt, wait_time=self.settings.stimuli["Message"].get("wait_duration", 3))
-        self.clear_screen()
+        self.display.clear()
 
     def stop_block(self, reason: str):
         """
@@ -261,41 +272,19 @@ class PsychoPhysicsExperiment:
         """
         # Log the end of the session
         self.logger.info(self.codex.message("ses", "fin"))
-        msg = emojize(f"You did it :fire: Session {self.ses_id} of the experiment is over.")
-        msg += emojize("\n\nThank you!")
+        msg = f"You did it. Session {self.ses_id} of the experiment is over."
+        msg += "\n\nThank you!"
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["duration"], msg_type="info")
         # Save
-        self.save_session_complete()
+        self.data.participants["Completed"] = pd.to_datetime(self.participants["Completed"])
+        self.data.update_participant("Completed", 1)
+        self.data.save_participants(self.files["participants"])
+        self.files.remove_block_from_names()
+        self.data.save_stimuli(self.files.stim_data)
+        self.data.save_behavioral(self.file.behavior)
+        self.data.save_frames(self.files.frames)
         # Quit
         self.goodbye()
-
-    def save_stim_data(self):
-        """
-        Save the stimulus data.
-        """
-        self.stim_data.to_csv(self.stim_data_file, sep=",", index=False)
-
-    def save_behav_data(self):
-        """
-        Save the behavioral data.
-        """
-        self.behav_data.to_csv(self.behav_data_file, sep=",", index=False)
-
-    def save_frame_data(self):
-        """
-        Save the frame data.
-        """
-        self.frames_data.to_csv(self.frames_data_file, sep=",", index=False)
-
-    def save_session_complete(self):
-        """
-        Save the participants data.
-        """
-        df = self.load_participants_file()
-        cond = ((df["PID"] == int(self.sub_id)) & (df["Session"] == int(self.ses_id)) & (df["Task"] == self.task_id))
-        df["Completed"] = pd.to_datetime(df["Completed"])
-        df.loc[cond, "Completed"] = self.today
-        df.to_csv(self.part_file, sep="\t", index=False)
 
     def block_debug(self, msg):
         """
@@ -438,67 +427,6 @@ class PsychoPhysicsExperiment:
         remain_blocks = [block for block in all_blocks if block not in comp_blocks]
 
         return remain_blocks
-
-    def init_frames_data(self):
-        """
-        Initialize the frame intervals data.
-        """
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_id}_block-{self.block_id}_FrameIntervals.csv"
-        frames_file = self.ses_data_dir / fname
-        if frames_file.exists():
-            self.block_warning(f"File {frames_file.name} already exists. Renaming the file as backup.")
-            frames_file.rename(frames_file.with_suffix(".BAK"))
-        self.frames_data_file = frames_file
-        self.frames_data = pd.DataFrame(columns=[
-            "TrialIndex",
-            "Period",
-            "FrameIndex", "FrameDuration_ms", "Frame_TrialTime_ms"
-        ])
-
-    def init_stim_data(self):
-        """
-        Initialize the stimulus data.
-        """
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_id}_block-{self.block_id}_stimuli.csv"
-        stim_file = self.ses_data_dir / fname
-        if stim_file.exists():
-            self.block_warning(f"File {stim_file.name} already exists. Renaming the file as backup.")
-            stim_file.rename(stim_file.with_suffix(".BAK"))
-        self.stim_data_file = stim_file
-        self.stim_data = pd.DataFrame(columns=[
-            "BlockID", "BlockName", "BlockDuration_sec",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
-        ])
-
-    def init_behav_data(self):
-        """
-        Initialize the behavioral data.
-        """
-        fname = f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_id}_block-{self.block_id}_behavioral.csv"
-        behav_file = self.ses_data_dir / fname
-        if behav_file.exists():
-            self.block_warning(f"File {behav_file.name} already exists. Renaming the file as backup.")
-            behav_file.rename(behav_file.with_suffix(".BAK"))
-        self.behav_data_file = behav_file
-
-    def init_block_data(self):
-        """
-        Initialize the block data.
-        """
-        self.init_stim_data()
-        self.init_behav_data()
-        self.init_frames_data()
-
-    def load_session_data(self, data_type):
-        """
-        Load the session data.
-        """
-        files = self.ses_data_dir.glob(
-            f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_id}_block-*_{data_type}.csv"
-        )
-        data = pd.concat([pd.read_csv(file) for file in files], ignore_index=True)
-
-        return data
 
     def hello_gui(self):
         """
@@ -901,6 +829,7 @@ class PsychoPhysicsExperiment:
             self.logger.critical(self.codex.message("exp", "term"))
             try:
                 # Save as much as you can
+                self.files.remove_block_from_names()
                 self.data.save_stimuli(self.files.stim_data)
                 self.data.save_behavioral(self.file.behavior)
                 self.data.save_frames(self.files.frames)
@@ -925,16 +854,6 @@ class PsychoPhysicsExperiment:
             for key, mods in pressed:
                 if key == "c" and mods["ctrl"]:
                     self.goodbye("User quit.")
-
-    def concatenated_blocks(self):
-        """
-        Concatenates the blocks for the task.
-        """
-        conc_blocks = []
-        for block in self.settings.exp["Tasks"][self.task_id]["blocks"]:
-            for _ in range(block["n_blocks"]):
-                conc_blocks.append(block)
-        return conc_blocks
 
     def ms2fr(self, duration: float):
         """
@@ -1062,19 +981,6 @@ class PsychoPhysicsExperiment:
         """
         ppd = deg2pix(1, self.monitor)
         return cpp * ppd
-
-    def time_index_from_sum(self, time_point, frame_times):
-        """
-        Find the frame number for a given time by cumulatively summing the frame times.
-
-        Args:
-            time_point (float): The time point to find the frame number for.
-            frame_times (array): The frame times.
-
-        Returns:
-            int: The frame number.
-        """
-        return np.argmax(np.cumsum(frame_times) > time_point)
 
     def time_index(self, time_point, frame_times):
         """

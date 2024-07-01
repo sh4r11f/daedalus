@@ -48,11 +48,11 @@ class MyeLink:
         tracked_eye (str): The eye being tracked.
         codex (daedalus.codes.Codex): The codex for the tracker.
     """
-    def __init__(self, exp_name, tracker_name, tracker_config, dummy):
+    def __init__(self, exp_name, tracker_config, dummy):
 
         # Setup
+        self.tracker_name = "Eyelink1000Plus"
         self.exp_name = exp_name
-        self.tracker_name = tracker_name
         self.params = tracker_config
         self.dummy = dummy
         self.codex = Codex()

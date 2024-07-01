@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from daedalus.codes import Codex
+from daedalus.utils import time_index_from_sum
 
 
 class DataManager:
@@ -54,9 +55,6 @@ class DataManager:
         self.frames = None
         self.eye_events = None
         self.eye_samples = None
-
-    def add_session(self):
-        pass
 
     def init_participants(self):
         """
@@ -145,25 +143,139 @@ class DataManager:
         """
         Initialize the stimuli for the experiment.
         """
-        pass
+        self.stimuli = pd.DataFrame(columns=[
+            "SubjectID", "SessionID", "TaskID", "BlockID", "BlockName", "BlockDuration_sec",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
+        ])
 
     def init_frames(self):
         """
         Initialize the frames for the experiment.
         """
-        pass
+        self.frames = pd.DataFrame(columns=[
+            "SubjectID", "SessionID", "TaskID","BlockID", "TrialIndex",
+            "Period",
+            "FrameIndex", "FrameDuration_ms", "Frame_TrialTime_ms"
+        ])
 
     def init_eye_events(self):
         """
         Initialize the eye events for the experiment.
         """
-        pass
+        self.eye_events = pd.DataFrame(columns=[
+            "BlockID", "BlockName", "TrialIndex", "TrialNumber",
+            "TrackerLag", "EventType",
+            "EventStart_ExpTime_ms", "EventStart_TrackerTime_ms", "EventStart_FrameN",
+            "EventEnd_ExpTime_ms", "EventEnd_TrackerTime_ms", "EventEnd_FrameN",
+            "EventDuration_ms", "EventDuration_fr", "Event_Period",
+            "GazeStartX_px", "GazeStartX_ppd", "GazeStartX_dva",
+            "GazeStartY_px", "GazeStartY_ppd", "GazeStartY_dva",
+            "GazeEndX_px", "GazeEndX_ppd", "GazeEndX_dva",
+            "GazeEndY_px", "GazeEndY_ppd", "GazeEndY_dva",
+            "GazeAvgX_px", "GazeAvgX_ppd", "GazeAvgX_dva",
+            "GazeAvgY_px", "GazeAvgY_ppd", "GazeAvgY_dva",
+            "AmplitudeX_dva", "AmplitudeY_dva",
+            "PupilStart_area", "PupilEnd_area", "PupilAvg_area",
+            "VelocityStart_dps", "VelocityEnd_dps", "VelocityAvg_dps", "VelocityPeak_dps",
+            "Angle_deg", "Angle_rad",
+        ])
 
     def init_eye_samples(self):
         """
         Initialize the eye samples for the experiment.
         """
-        pass
+        self.eye_samples = pd.DataFrame(columns=[
+            "BlockID", "BlockName", "TrialIndex", "TrialNumber", "TaskPeriod",
+            "TrackerLag", "SampleIndex", "SampleEvent",
+            "SampleOnset_ExpTime_ms", "SampleOnset_TrackerTime_ms", "SampleOnset_FrameN",
+            "GazeX_px", "GazeX_ppd", "GazeX_dva",
+            "GazeY_px", "GazeY_ppd", "GazeY_dva",
+            "Pupil_area",
+        ])
+
+    def add_eye_events(self, df):
+        """
+        Add a dictionary of data to the events dataframe.
+
+        Args:
+            df (dataframe): The data to add to the events dataframe.
+        """
+        self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
+
+    def save_stimuli(self, file_path, block_id=None):
+        """
+        Save the stimulus data.
+        """
+        if block_id is not None:
+            self.stimuli.loc[self.stimuli["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
+        else:
+            self.stimuli.to_csv(file_path, sep=",", index=False)
+
+    def save_behavior(self, file_path, block_id=None):
+        """
+        Save the behavioral data.
+        """
+        if block_id is not None:
+            self.behavior.loc[self.behavior["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
+        else:
+            self.behavior.to_csv(file_path, sep=",", index=False)
+
+    def save_frames(self, file_path, block_id=None):
+        """
+        Save the frame data.
+        """
+        if block_id is not None:
+            self.frames.loc[self.frames["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
+        else:
+            self.frames.to_csv(file_path, sep=",", index=False)
+
+    def save_eye_events(self, file_path, block_id=None):
+        """
+        Save the eye events.
+        """
+        if block_id is not None:
+            self.eye_events.loc[self.eye_events["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
+        else:
+            self.eye_events.to_csv(file_path, sep=",", index=False)
+
+    def save_eye_samples(self, file_path, block_id=None):
+        """
+        Save the eye samples.
+        """
+        if block_id is not None:
+            self.eye_samples.loc[self.eye_samples["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
+        else:
+            self.eye_samples.to_csv(file_path, sep=",", index=False)
+
+    def load_ses_behavior(self, beh_files):
+        """
+        Load the behavioral data.
+        """
+        self.behavior = pd.concat([pd.read_csv(file) for file in beh_files], ignore_index=True)
+
+    def load_ses_stimuli(self, stim_files):
+        """
+        Load the stimulus data.
+        """
+        self.stimuli = pd.concat([pd.read_csv(file) for file in stim_files], ignore_index=True)
+
+    def load_ses_frames(self, frame_files):
+        """
+        Load the frame data.
+        """
+        self.frames = pd.concat([pd.read_csv(file) for file in frame_files], ignore_index=True)
+
+    def load_ses_eye_events(self, eye_event_files):
+        """
+        Load the eye events.
+        """
+        self.eye_events = pd.concat([pd.read_csv(file) for file in eye_event_files], ignore_index=True)
+
+    def load_ses_eye_samples(self, eye_sample_files):
+        """
+        Load the eye samples.
+        """
+        self.eye_samples = pd.concat([pd.read_csv(file) for file in eye_sample_files], ignore_index=True)
 
     # def init_database(self):
     #     """
