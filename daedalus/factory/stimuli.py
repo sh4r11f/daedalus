@@ -21,6 +21,7 @@
 from pathlib import Path
 from psychopy import visual, monitors
 from psychopy.tools.monitorunittools import deg2pix, pix2deg
+from psychopy_visionscience import NoiseStim
 from daedalus.utils import str2tuple
 
 
@@ -230,39 +231,58 @@ class StimulusFactory:
         Returns:
             visual.GratingStim: The dynamic mask stimulus.
         """
-        import psychopy
-        psychopy.plugins.activatePlugins()
-
         params = self.params["Mask"]
-        size = params["size"]
-        sf = params["spatial_frequency"]
-        low_cut = params["lower_cutoff"]
-        up_cut = params["upper_cutoff"]
-        if self.window.units == "pix":
-            size = deg2pix(size, self.monitor)
-            sf = sf * pix2deg(1, self.monitor)
-            low_cut = low_cut * pix2deg(1, self.monitor)
-            up_cut = up_cut * pix2deg(1, self.monitor)
-        mask = visual.NoiseStim(
+        mask = NoiseStim(
             win=self.window,
             name=name,
-            noiseType=params["type"],  # Black and white noise
-            noiseElementSize=size,  # Size of noise elements
-            noiseBaseSf=sf,  # Base spatial frequency
-            noiseBW=params["spatial_frquency_bandwidth"],  # Spatial frequency bandwidth
-            noiseBWO=params["orientation_bandwidth"],  # Orientation bandwidth (degrees)
-            noiseFilterLower=low_cut,  # Lower cutoff frequency for the filter
-            noiseFilterUpper=up_cut,  # Upper cutoff frequency for the filter
-            noiseFilterOrder=params["filter_order"],  # Filter order
-            size=size,  # Size of the noise patch
-            color=params["color"],  # Color of the noise
+            size=(params["size"], params["size"]),
+            noiseType=params["type"],
+            noiseElementSize=params["noise_size"],
+            noiseBaseSf=params["spatial_frequency"],
+            noiseBW=params["spatial_frequency_bandwidth"],
+            noiseBWO=params["orientation_bandwidth"],
+            noiseFilterLower=params["lower_cutoff"] / params["size"],
+            noiseFilterUpper=params["upper_cutoff"] / params["size"],
+            noiseFilterOrder=params["filter_order"],
+            color=str2tuple(params["color"]),
             colorSpace='rgb',
             opacity=1,
             blendmode='avg',
             contrast=1.0,
-            texRes=params["resolution"],  # Texture resolution
+            texRes=params["resolution"],
+            noiseClip=params["clip_value"],
             interpolate=False
         )
+        # size = 512
+        # noise_size = 16
+        # tex_res = 64
+        # sf = 5
+        # bw = 1
+        # ori = 30
+        # low = 5 / size
+        # high = 20 / size
+        # mask = NoiseStim(
+        #     win=self.window,
+        #     # mask="sqrXsqr",
+        #     noiseType="Binary",  # Black and white noise
+        #     noiseElementSize=noise_size,  # Size of noise elements
+        #     noiseBaseSf=sf,  # Base spatial frequency
+        #     noiseBW=bw,  # Spatial frequency bandwidth
+        #     noiseBWO=ori,  # Orientation bandwidth (degrees)
+        #     noiseFilterLower=low,  # Lower cutoff frequency for the filter
+        #     noiseFilterUpper=high,  # Upper cutoff frequency for the filter
+        #     noiseFilterOrder=1,  # Filter order
+        #     # sf=sf,
+        #     size=(size, size),  # Size of the noise patch
+        #     color=(1, 1, 1),  # Color of the noise
+        #     colorSpace='rgb',
+        #     opacity=1,
+        #     blendmode='avg',
+        #     contrast=1.0,
+        #     texRes=tex_res,  # Texture resolution
+        #     noiseClip=3.0,  # Clipping value
+        #     interpolate=False
+        # )
         setattr(self, name, mask)
         return mask
 
@@ -545,7 +565,7 @@ class StimulusFactory:
         Returns:
             visual.ImageStim: The debrief image stimulus.
         """
-        scale = self.params["DebriefImage"]["image_scale"]
+        scale = self.params["Debrief"]["image_scale"]
         width, height = self.window.size
         width = width * scale
         height = height * scale
@@ -555,7 +575,7 @@ class StimulusFactory:
         pos = (width / 2, 0)
 
         stim = visual.ImageStim(
-            self.window,
+            win=self.window,
             name=name,
             image=image_file,
             mask=None,
@@ -573,7 +593,7 @@ class StimulusFactory:
         setattr(self, name, stim)
         return stim
 
-    def make_performance_image(self, name, plot_file):
+    def make_performance_image(self, name, plot_file=None):
         """
         Make a performance image stimulus.
 
@@ -584,7 +604,7 @@ class StimulusFactory:
         Returns:
             visual.ImageStim: The performance image stimulus.
         """
-        scale = self.params["DebriefImage"]["image_scale"]
+        scale = self.params["Debrief"]["image_scale"]
         width, height = self.window.size
         width = width * scale
         height = height * scale
@@ -594,7 +614,7 @@ class StimulusFactory:
         pos = (width / 2, 0)
 
         stim = visual.ImageStim(
-            self.window,
+            win=self.window,
             name=name,
             image=plot_file,
             mask=None,

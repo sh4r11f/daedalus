@@ -41,11 +41,24 @@ class TaskFactory:
         self.info = self.concat_blocks()
 
     def shuffle(self):
+        """
+        Shuffle all blocks.
+        """
+        # Shuffle
         random.shuffle(self.blocks)
+
+        # Ensure the practice block is first
         self.put_practice_first()
 
-    def shuffle_except_practice(self):
+        # Reset the block ID and index
+        for idx, block in enumerate(self.blocks):
+            block.idx = idx
+            block.id = idx + 1
 
+    def shuffle_except_practice(self):
+        """
+        Shuffle all blocks except the practice block.
+        """
         index = [idx for idx, block in enumerate(self.blocks) if block.name == "practice"]
 
         # Extract the element to keep constant
@@ -61,20 +74,12 @@ class TaskFactory:
         self.blocks = arr_to_shuffle[:index] + [constant_element] + arr_to_shuffle[index:]
 
     def put_practice_first(self):
-        index = [idx for idx, block in enumerate(self.blocks) if block.name == "practice"]
+        """
+        Move the practice block to the first position in the list of blocks.
+        """
+        index = [idx for idx, block in enumerate(self.blocks) if block.name == "practice"][0]
         practice_block = self.blocks[index]
         self.blocks = [practice_block] + self.blocks[:index] + self.blocks[index+1:]
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.index < len(self.blocks):
-            result = self.blocks[self.index]
-            self.index += 1
-            return result
-        else:
-            raise StopIteration
 
     def add_block(self, block, idx=None):
         if idx is not None:
@@ -93,6 +98,20 @@ class TaskFactory:
                 conc_blocks.append(block)
         return conc_blocks
 
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index < len(self.blocks):
+            result = self.blocks[self.index]
+            self.index += 1
+            return result
+        else:
+            raise StopIteration
+
+    def next(self):
+        return self.__next__()
+
 
 class BlockFactory:
     def __init__(self, block_idx, block_info):
@@ -101,12 +120,15 @@ class BlockFactory:
         self.id = block_idx + 1
         self.info = block_info
         self.name = block_info["name"]
-        self.repeat = None
-        self.repeated = False
-        self.needs_calib = False
+
         self.trials = []
-        self.n_trials = 0
+
+        self.errors = None
+        self.repeat = False
+        self.needs_calib = False
+        self.failed = 0
         self.index = 0
+
         self._handler = None
 
     @property
@@ -131,7 +153,29 @@ class BlockFactory:
         return self.trials[trial_idx]
 
     def shuffle(self):
+        """
+        Shuffle all trials.
+        """
+        # Shuffle
         random.shuffle(self.trials)
+
+        # Reset the trial ID and index
+        for idx, trial in enumerate(self.trials):
+            trial.idx = idx
+            trial.id = idx + 1
+
+    def repeated(self):
+        """
+        Determine if the block will repeat.
+        """
+        self.failed += 1
+        self.error = None
+        self.repeat = False
+        self.needs_calib = False
+        self.index = 0
+
+        for trial in self.trials:
+            trial.reset()
 
     def __iter__(self):
         return self
@@ -144,28 +188,82 @@ class BlockFactory:
         else:
             raise StopIteration
 
+    def next(self):
+        return self.__next__()
+
 
 class TrialFactory:
-    def __init__(self, trial_idx, **kwargs):
+    def __init__(self, trial_idx, frames, **kwargs):
 
         # Setup
         self.idx = trial_idx
         self.id = trial_idx + 1
-        self.duration = None
-        self.frames = []
+        self._frames = frames
+        self.break_frame = len(frames)
+
         self.eye_events = []
         self.eye_samples = []
-        self.key_press = None
-        self.frame_intervals = None
+        self.frame_intervals = []
+
+        self.duration = 0
         self.drift_correction = 0
         self.repeat = False
-        self.repeated = False
+        self.failed = 0
+        self.key_press = None
+        self.response = None
+        self.error = None
         self.fake_response = None
         self.fake_response_onset = -1
+
+        self.index = 0
 
         # Set and overwrite the attributes that are provided
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    @property
+    def n_frames(self):
+        return len(self._frames[:self.break_frame])
+
+    @property
+    def frames(self):
+        return self._frames
+
+    @frames.setter
+    def frames(self, frames):
+        self._frames = frames
+        self.break_frame = len(frames)
+        self.index = 0
+
+    def repeated(self):
+        """
+        Reset for a repeated trial.
+        """
+        self.failed += 1
+
+        self.duration = 0
+        self.frame_intervals = []
+        self.drift_correction = 0
+        self.repeat = False
+        self.key_press = None
+        self.response = None
+        self.error = None
+        self.index = 0
+
+    def reset(self):
+        """
+        Reset for a block.
+        """
+        self.failed = 0
+
+        self.duration = 0
+        self.frame_intervals = []
+        self.drift_correction = 0
+        self.repeat = False
+        self.key_press = None
+        self.response = None
+        self.error = None
+        self.index = 0
 
     def s2ms(self, var_name):
         # Get the value
@@ -181,3 +279,17 @@ class TrialFactory:
 
     def to_dict(self):
         return self.__dict__
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index < len(self._frames):
+            result = self._frames[self.index]
+            self.index += 1
+            return result
+        else:
+            raise StopIteration
+
+    def next(self):
+        return self.__next__()

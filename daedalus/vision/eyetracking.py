@@ -87,17 +87,16 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         # Show block info as text
         if block.repeat:
-            msg = f"You are repeating block {block.id}/{self.task.n_blocks:02d}"
+            msg = f"You are repeating block {self.block_id}/{self.task.n_blocks:02d}"
             block.needs_calib = True
             self.logger.info(self.codex.message("block", "rep"))
-            self.logger.info(self.codex.message("calib", "rep"))
         else:
             # practice block
             if block.name == "practice":
-                block.needs_calib = True
+                block.needs_calib = False
                 msg = "You are about to begin a practice block."
             else:
-                msg = f"You are about to begin block {block.id}/{self.task.n_blocks:02d}"
+                msg = f"You are about to begin block {self.block_id}/{self.task.n_blocks:02d}"
 
         # Calibrate if needed
         if block.needs_calib:
@@ -126,7 +125,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.show_msg("\n\n".join(msg_))
 
         # Initialize the block data
-        errors = self.files.add_block()
+        errors = self.files.add_block(self.sub_id, self.ses_id, self.block_id, self.task_name)
         if errors:
             for e in errors:
                 self.block_warning(e)
@@ -137,10 +136,15 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.data.init_frames()
         self.data.init_eye_events()
         self.data.init_eye_samples()
-        self.open_edf_file()
+        if not self.debug:
+            self.open_edf_file()
 
         # Reset the block clock
         self.timer.start_block()
+
+        # Reset the block status
+        if block.repeat:
+            block.repeated()
 
         # Log the start of the block
         self.block_info(self.codex.message("block", "init"))
@@ -165,8 +169,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         if self.debug:
             recalib = False
             self.timer.start_trial()
-            self.trial_debug(self.codex.message("trial", "init"))
-            self.trial_debug(f"TRIALID_{self.trial_id}")
         else:
             # Drift correction
             fix_pos = self.cart2mat(*self.stimuli.fixation.pos)
@@ -197,6 +199,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
             else:
                 recalib = self.handle_drift_error(drift_status)
+
+        # Reset the trial status
+        if trial.repeat:
+            trial.repeated()
 
         return recalib
 
@@ -294,13 +300,11 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.codex_msg("block", "fin")
         self.tracker.go_offline()
         self.tracker.reset()
+        self.data.save_eye_events(self.files.eye_events)
+        self.data.save_eye_samples(self.files.eye_samples)
 
         # Call the parent method
         super().wrap_block(block)
-
-        # Save the data
-        self.data.save_eye_events(self.files.eye_events)
-        self.data.save_eye_samples(self.files.eye_samples)
 
     def stop_block(self, block):
         """
@@ -333,7 +337,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["duration"], msg_type="info")
         # Save
         self.data.participants["Completed"] = pd.to_datetime(self.data.participants["Completed"])
-        self.data.update_participant("Completed", 1)
+        self.data.update_participant("Completed", self.timer.today)
         self.data.save_participants(self.files.participants)
         # Quit
         self.goodbye()
@@ -368,7 +372,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # Take the tracker offline
             self.tracker.go_offline()
             # Start calibration
-            res = self.tracker.calibrate()
+            if self.simulation:
+                res = self.codex.message("calib", "ok")
+            else:
+                res = self.tracker.calibrate()
             if res == self.codex.message("calib", "ok"):
                 # txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
                 # resp = self.show_msg(txt)
@@ -416,7 +423,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         # Sample rate
         sample_status = self.tracker.check_sample_rate()
-        if sample_status == self.codex.message("samp", "good"):
+        if sample_status == self.codex.message("rate", "good"):
             results.append("(✓) Sample rate checks out.")
             self.logger.info("Sample rate checks out.")
         else:
@@ -628,7 +635,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                     status = self.codex.message("fix", "ok")
         else:
             status = self.codex.message("fix", "null")
-            self.trial_debug(status)
 
         return status, events
 
@@ -709,7 +715,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                     break
         else:
             status = self.codex.message("sacc", "null")
-            self.trial_debug(status)
 
         return status, events
 
@@ -723,7 +728,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             tuple: The gaze coordinates.
         """
-        df = pd.DataFrame()
         start = event["time_start"]
         start_frame = utils.time_index(start, trial.tracker_times)
         end = event["time_end"]
@@ -734,23 +738,25 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         ppd_avg_x = event["ppd_avg_x"]
         ppd_avg_y = event["ppd_avg_y"]
 
-        df["EventType"] = "FixationUpdate"
-        df["EventPeriod"] = trial.frames[start_frame]
-        df["EventStart_FrameN"] = start_frame
-        df["EventStart_TrackerTime_ms"] = start
-        df["EventStart_TrialTime_ms"] = trial.frame_times[start_frame]
-        df["EventEnd_FrameN"] = end_frame
-        df["EventEnd_TrackerTime_ms"] = end
-        df["EventEnd_TrialTime_ms"] = trial.frame_times[end_frame]
-        df["EventDuration_ms"] = duration
-        df["GazeAvgX_px"] = gaze_avg_x
-        df["GazeAvgY_px"] = gaze_avg_y
-        df["GazeAvgX_ppd"] = ppd_avg_x
-        df["GazeAvgY_ppd"] = ppd_avg_y
-        df["GazeAvgX_dva"] = pix2deg(gaze_avg_x, self.display.monitor)
-        df["GazeAvgY_dva"] = pix2deg(gaze_avg_y, self.display.monitor)
-        df["GazeAvgX_Tracker_dva"] = gaze_avg_x / ppd_avg_x
-        df["GazeAvgY_Tracker_dva"] = gaze_avg_y / ppd_avg_y
+        df = pd.DataFrame({
+            "EventType": ["FixationUpdate"],
+            "EventPeriod": [trial.frames[start_frame]],
+            "EventStart_FrameN": [start_frame],
+            "EventStart_TrackerTime_ms": [start],
+            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "EventEnd_FrameN": [end_frame],
+            "EventEnd_TrackerTime_ms": [end],
+            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "EventDuration_ms": [duration],
+            "GazeAvgX_px": [gaze_avg_x],
+            "GazeAvgY_px": [gaze_avg_y],
+            "GazeAvgX_ppd": [ppd_avg_x],
+            "GazeAvgY_ppd": [ppd_avg_y],
+            "GazeAvgX_dva": [pix2deg(gaze_avg_x, self.display.monitor)],
+            "GazeAvgY_dva": [pix2deg(gaze_avg_y, self.display.monitor)],
+            "GazeAvgX_Tracker_dva": [gaze_avg_x / ppd_avg_x],
+            "GazeAvgY_Tracker_dva": [gaze_avg_y / ppd_avg_y]
+        })
 
         return df
 
@@ -765,7 +771,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             pd.DataFrame: The parsed data.
         """
-        df = pd.DataFrame()
         end = event["time_end"]
         end_frame = utils.time_index(end, trial.tracker_times)
         gaze_end_x = event["gaze_end_x"]
@@ -773,20 +778,23 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         ppd_end_x = event["ppd_end_x"]
         ppd_end_y = event["ppd_end_y"]
 
-        df["EventType"] = "FixationEnd"
-        df["EventEnd_FrameN"] = end_frame
-        df["EventEnd_TrackerTime_ms"] = end
-        df["EventEnd_TrialTime_ms"] = trial.frame_times[end_frame]
-        df["GazeEndX_px"] = gaze_end_x
-        df["GazeEndY_px"] = gaze_end_y
-        df["GazeEndX_ppd"] = ppd_end_x
-        df["GazeEndY_ppd"] = ppd_end_y
-        df["GazeEndX_dva"] = pix2deg(gaze_end_x, self.display.monitor)
-        df["GazeEndY_dva"] = pix2deg(gaze_end_y, self.display.monitor)
-        df["GazeEndX_Tracker_dva"] = gaze_end_x / ppd_end_x
-        df["GazeEndY_Tracker_dva"] = gaze_end_y / ppd_end_y
+        df = pd.DataFrame({
+            "EventType": ["FixationEnd"],
+            "EventEnd_FrameN": [end_frame],
+            "EventEnd_TrackerTime_ms": [end],
+            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "GazeEndX_px": [gaze_end_x],
+            "GazeEndY_px": [gaze_end_y],
+            "GazeEndX_ppd": [ppd_end_x],
+            "GazeEndY_ppd": [ppd_end_y],
+            "GazeEndX_dva": [pix2deg(gaze_end_x, self.display.monitor)],
+            "GazeEndY_dva": [pix2deg(gaze_end_y, self.display.monitor)],
+            "GazeEndX_Tracker_dva": [gaze_end_x / ppd_end_x],
+            "GazeEndY_Tracker_dva": [gaze_end_y / ppd_end_y]
+        })
 
         return df
+
 
     def add_to_events_dataframe(self, data: dict, tracker_lag: float):
         """
@@ -947,7 +955,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # Save as much as you can
             try:
                 self.data.save_stimuli(self.files.stim_data)
-                self.data.save_behavioral(self.file.behavior)
+                self.data.save_behavior(self.file.behavior)
                 self.data.save_frames(self.files.frames)
                 self.data.save_eye_events(self.files.eye_events)
                 self.data.save_eye_samples(self.files.eye_samples)

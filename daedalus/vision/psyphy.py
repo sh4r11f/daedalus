@@ -79,7 +79,7 @@ class PsychoPhysicsExperiment:
                 self.simulation = False
 
         # Directories and files
-        self.files = FileManager(self.name, root, version)
+        self.files = FileManager(name, root, version, self.debug)
 
         # Settings
         self.settings = SettingsManager(self.files.dirs.config, version, platform)
@@ -266,7 +266,7 @@ class PsychoPhysicsExperiment:
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["duration"], msg_type="info")
         # Save
         self.data.participants["Completed"] = pd.to_datetime(self.data.participants["Completed"])
-        self.data.update_participant("Completed", 1)
+        self.data.update_participant("Completed", self.timer.today)
         self.data.save_participants(self.files.participants)
         # Quit
         self.goodbye()
@@ -430,7 +430,6 @@ class PsychoPhysicsExperiment:
         )
 
         if self.simulation:
-            info = dlg.show(wait=self.settings.simulation["wait_gui"])
             return self.settings.simulation["selection"], self.settings.simulation["experimenter"]
         else:
             info = dlg.show()
@@ -495,7 +494,7 @@ class PsychoPhysicsExperiment:
 
         # Show the dialog
         if self.simulation:
-            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            info = dlg.data
             for col in self.data.participants.columns:
                 if col not in info.keys():
                     info[col] = None
@@ -546,7 +545,7 @@ class PsychoPhysicsExperiment:
 
         # Show the dialog
         if self.simulation:
-            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            info = dlg.data
             pid = self.settings.simulation["pid"]
             return self.data.participants.loc[self.data.participants["PID"].astype(int) == int(pid), :]
         else:
@@ -629,7 +628,7 @@ class PsychoPhysicsExperiment:
 
         # Show the dialog
         if self.simulation:
-            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            info = dlg.data
             return self.settings.simulation["session"], self.task_name
         else:
             info = dlg.show()
@@ -671,7 +670,7 @@ class PsychoPhysicsExperiment:
             nMaxFrames=100,
             nWarmUpFrames=10,
             threshold=rf_thresh,
-            infoMsg=False
+            infoMsg="||  Warming Up  ||"
         )
         intended_rf = int(self.settings.monitor["refresh_rate"])
         if rf is None:
@@ -693,10 +692,11 @@ class PsychoPhysicsExperiment:
         flagged = run_info['systemUserProcFlagged']
         if flagged:
             results.append("(✘) Flagged processes:")
+            self.logger.warning("Flagged processes:")
             w = ""
             for proc in np.unique(flagged):
                 w += f"\t- {proc}\n"
-            self.logger.warning(f"Flagged processes: {w}")
+                self.logger.warning(f"\t- {proc}")
             results.append(w)
         else:
             self.logger.info("No flagged processes.")
@@ -820,7 +820,7 @@ class PsychoPhysicsExperiment:
             try:
                 # Save as much as you can
                 self.data.save_stimuli(self.files.stim_data)
-                self.data.save_behavioral(self.file.behavior)
+                self.data.save_behavior(self.file.behavior)
                 self.data.save_frames(self.files.frames)
                 self.logger.close_file()
             except Exception as e:
@@ -828,7 +828,8 @@ class PsychoPhysicsExperiment:
                 raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
             # Log
-            self.logger.info("Bye Bye Experiment.")
+            msg = f"Bye Bye Experiment. We only knew each other for {self.timer.exp.getTime() / 60:.2f} minutes."
+            self.logger.info(msg)
             self.logger.close_file()
             core.quit()
 

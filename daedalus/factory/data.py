@@ -148,8 +148,7 @@ class DataManager:
         Initialize the frames for the experiment.
         """
         self.frames = pd.DataFrame(columns=[
-            "SubjectID", "SessionID", "TaskID", "BlockID", "BlockName",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
+            "TrialIndex",
             "Period",
             "FrameIndex", "FrameDuration_ms", "Frame_TrialTime_ms"
         ])
@@ -189,32 +188,29 @@ class DataManager:
             "Pupil_area",
         ])
 
-    def add_eye_events(self, df):
+    def add_block_info(self, block):
         """
-        Add a dictionary of data to the events dataframe.
+        Add block information to the data.
 
         Args:
-            df (dataframe): The data to add to the events dataframe.
+            block (Block): The block object.
         """
-        self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
+        self.behavior["BlockID"] = block.id
+        self.behavior["BlockName"] = block.name
+        self.behavior["BlockDuration_sec"] = block.duration
 
-    def collect_eye_samples(self, df):
-        """
-        Add a dictionary of data to the samples dataframe.
+        self.stimuli["BlockID"] = block.id
+        self.stimuli["BlockName"] = block.name
+        self.stimuli["BlockDuration_sec"] = block.duration
 
-        Args:
-            df (dataframe): The data to add to the samples dataframe.
-        """
-        self.eye_samples = pd.concat([self.eye_samples, df], ignore_index=True)
+        self.frames["BlockID"] = block.id
+        self.frames["BlockName"] = block.name
 
-    def collect_eye_events(self, events):
-        """
-        Add a dictionary of data to the events dataframe.
+        self.eye_events["BlockID"] = block.id
+        self.eye_events["BlockName"] = block.name
 
-        Args:
-            events (dict): The data to add to the events dataframe.
-        """
-        self.eye_events = pd.concat([self.eye_events, pd.DataFrame.from_dict(events)], ignore_index=True)
+        self.eye_samples["BlockID"] = block.id
+        self.eye_samples["BlockName"] = block.name
 
     def reset(self):
         """
@@ -225,6 +221,42 @@ class DataManager:
         self.frames = None
         self.eye_events = None
         self.eye_samples = None
+
+    def collect_trial(self, df, data_type):
+        """
+        Collect the trial data.
+
+        Args:
+            df (dataframe): The trial data to collect.
+            data_type (str): The type of data to collect.
+        """
+        if data_type == "behavior":
+            if not self.behavior.empty and not self.behavior.isna().all().all():
+                self.behavior = pd.concat([self.behavior, df], ignore_index=True)
+            else:
+                self.behavior = df
+        elif data_type == "stimuli":
+            if not self.stimuli.empty and not self.stimuli.isna().all().all():
+                self.stimuli = pd.concat([self.stimuli, df], ignore_index=True)
+            else:
+                self.stimuli = df
+        elif data_type == "frames":
+            if not self.frames.empty and not self.frames.isna().all().all():
+                self.frames = pd.concat([self.frames, df], ignore_index=True)
+            else:
+                self.frames = df
+        elif data_type == "eye_events":
+            if not self.eye_events.empty and not self.eye_events.isna().all().all():
+                self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
+            else:
+                self.eye_events = df
+        elif data_type == "eye_samples":
+            if not self.eye_samples.empty and not self.eye_samples.isna().all().all():
+                self.eye_samples = pd.concat([self.eye_samples, df], ignore_index=True)
+            else:
+                self.eye_samples = df
+        else:
+            raise ValueError(f"Data type {data_type} not recognized.")
 
     def save_stimuli(self, file_path):
         """

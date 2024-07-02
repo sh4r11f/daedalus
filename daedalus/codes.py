@@ -25,6 +25,7 @@ class Codex:
     def __init__(self):
 
         self.proc_codes = {
+            "break": 0,
             "con": 1,
             "config": 2,
             "calib": 3,
@@ -54,6 +55,7 @@ class Codex:
             "sacc": 23,
             "rew": 24,
             "sub": 25,
+            "smp": 26,
         }
         self.state_codes = {
             "init": 0.0,
@@ -103,7 +105,8 @@ class Codex:
             "usr": "USER",
             "sacc": "SACCADE",
             "rew": "REWARD",
-            "sub": "SUBJECT"
+            "sub": "SUBJECT",
+            "smp": "SAMPLE",
         }
         self.state_names = {
             "init": "START",

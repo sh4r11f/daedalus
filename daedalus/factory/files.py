@@ -33,12 +33,13 @@ class FileManager:
         root (str): Root directory for the vision module
         data_dir (str): Data directory for the vision module
     """
-    def __init__(self, name, root, version):
+    def __init__(self, name, root, version, debug):
 
         # Setup
         self.name = name
         self.root = Path(root)
         self.version = version
+        self.debug = debug
 
         # Directories
         self.dirs = DirectoryManager(root, version)
@@ -73,45 +74,59 @@ class FileManager:
         self.log.touch()
         self.log = str(self.log)
 
-    def add_block(self, sub_id, ses_id, task_id, block_id):
+    def _exist_rename(self, file):
+        """
+        Handle file exists error
 
+        Args:
+            file_path (str): The file path that already exists
+        """
+        if file.exists():
+            try:
+                file.rename(file.with_suffix(".BAK"))
+            except FileExistsError:
+                if self.debug:
+                    file.unlink()
+            return f"File {file.name} already exists. Renamed to {file.name}.BAK"
+
+    def add_block(self, sub_id, ses_id, block_id, task_id):
+        """
+        Add a block to the FileManager object
+
+        Args:
+            sub_id (str): Subject ID
+            ses_id (str): Session ID
+            block_id (str): Block ID
+            task_id (str): Task ID
+
+        Returns:
+            list: List of errors
+        """
         errors = []
         pre_name = f"sub-{sub_id}_ses-{ses_id}_task-{task_id}_block-{block_id}"
         fname = pre_name + "_behavior.csv"
         behav_file = self.dirs.ses / fname
-        if behav_file.exists():
-            behav_file.rename(behav_file.with_suffix(".BAK"))
-            errors.append(f"Behavioral file {fname} already exists. Renamed to {fname}.BAK")
+        errors.append(self._exist_rename(behav_file))
 
         fname = pre_name + "_stimuli.csv"
         stim_file = self.dirs.ses / fname
-        if stim_file.exists():
-            stim_file.rename(stim_file.with_suffix(".BAK"))
-            errors.append(f"Stimuli file {fname} already exists. Renamed to {fname}.BAK")
-
+        errors.append(self._exist_rename(stim_file))
+        
         fname = pre_name + "_frames.csv"
         frame_file = self.dirs.ses / fname
-        if frame_file.exists():
-            frame_file.rename(frame_file.with_suffix(".BAK"))
-            errors.append(f"Frames file {fname} already exists. Renamed to {fname}.BAK")
-
+        errors.append(self._exist_rename(frame_file))
+        
         fname = pre_name + "_EyeEvents.csv"
         eye_event_file = self.dirs.ses / fname
-        if eye_event_file.exists():
-            eye_event_file.rename(eye_event_file.with_suffix(".BAK"))
-            errors.append(f"Eye events file {fname} already exists. Renamed to {fname}.BAK")
-
+        errors.append(self._exist_rename(eye_event_file))
+        
         fname = pre_name + "_EyeSamples.csv"
         eye_sample_file = self.dirs.ses / fname
-        if eye_sample_file.exists():
-            eye_sample_file.rename(eye_sample_file.with_suffix(".BAK"))
-            errors.append(f"Eye samples file {fname} already exists. Renamed to {fname}.BAK")
-
+        errors.append(self._exist_rename(eye_sample_file))
+        
         fname = pre_name + "_EDFDisplay.csv"
         edf_display_file = self.dirs.ses / fname
-        if edf_display_file.exists():
-            edf_display_file.rename(edf_display_file.with_suffix(".BAK"))
-            errors.append(f"EDF display file {fname} already exists. Renamed to {fname}.BAK")
+        errors.append(self._exist_rename(edf_display_file))
 
         edf_host_file = f"{sub_id}_{ses_id}_{block_id}.edf"
 
@@ -123,7 +138,7 @@ class FileManager:
         self.edf_display = str(edf_display_file)
         self.edf_host = str(edf_host_file)
 
-        return errors
+        return [e for e in errors if e is not None]
 
     def remove_block_from_names(self):
 
@@ -143,6 +158,29 @@ class FileManager:
         self.eye_samples = str(self.eye_samples)
         self.edf_display = str(self.edf_display)
         self.edf_host = str(self.edf_host)
+
+    def load_stimuli(self):
+        """
+        Load stimulus files into the FileManager object
+        """
+        # Load stimulus files
+        files = list(self.dirs.stimuli.glob("*.png")) + list(self.dirs.stimuli.glob("*.jpg"))
+        for file in files:
+            setattr(self, file, str(file))
+
+    def get_file(self, file_name):
+        """
+        Get the file path for a given file name
+
+        Args:
+            file_name (str): The name of the file to get
+
+        Returns:
+            str: The file path
+        """
+        for attr in dir(self):
+            if file_name in attr:
+                return getattr(self, file_name)
 
 
 class DirectoryManager:

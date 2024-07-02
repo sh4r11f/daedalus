@@ -270,20 +270,23 @@ class MyeLink:
             # Send the tracker to offline mode
             self.go_offline()
             # Close the edf data file on the Host
-            self.eyelink.closeDataFile()
-            self.delay()
-            # Download the EDF data file from the Host PC to the Display PC
-            try:
-                self.eyelink.receiveDataFile(str(host_file), str(display_file))
-                msg = self.codex_msg("file", "ok")
+            if not self.dummy:
+                self.eyelink.closeDataFile()
+                self.delay()
+                # Download the EDF data file from the Host PC to the Display PC
+                try:
+                    self.eyelink.receiveDataFile(str(host_file), str(display_file))
+                    msg = self.codex_msg("file", "ok")
+                except RuntimeError as e:
+                    msg = e
+                    self.codex_msg("file", "fail")
+                    pylink.eyelink.closeGraphics()
+                    self.eyelink.close()
+
                 pylink.closeGraphics()
                 self.eyelink.close()
+
                 return msg
-            except RuntimeError as err:
-                self.codex_msg("file", "fail")
-                pylink.eyelink.closeGraphics()
-                self.eyelink.close()
-                return err
 
     def open_edf_file(self, host_file):
         """
