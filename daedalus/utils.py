@@ -83,7 +83,7 @@ def find_in_configs(dicts: list, key: str, value: str):
             return d
 
 
-def get_hypotenus(point_a, point_b):
+def get_hypotenuse(point_a, point_b):
     """
     Calculate the Euclidean distance between two points in a 2D plane.
 
@@ -163,3 +163,17 @@ def time_index_from_sum(time_point, frame_times):
         int: The frame number.
     """
     return np.argmax(np.cumsum(frame_times) > time_point)
+
+
+def time_index(time_point, frame_times):
+    """
+    Find the frame number for a given time.
+
+            Args:
+        time_point (float): The time point to find the frame number for.
+        frame_times (array): The frame times.
+
+    Returns:
+        int: The frame number.
+    """
+    return np.argmax(frame_times > time_point)

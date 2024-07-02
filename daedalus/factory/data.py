@@ -18,11 +18,9 @@
 #                     SPACE: Dartmouth College, Hanover, NH
 #
 # =================================================================================================== #
-import numpy as np
 import pandas as pd
 
 from daedalus.codes import Codex
-from daedalus.utils import time_index_from_sum
 
 
 class DataManager:
@@ -34,11 +32,11 @@ class DataManager:
         root (str): Root directory
         version (str): Version
     """
-    def __init__(self, name, root, version):
+    def __init__(self, name, params, version):
 
         # Setup
         self.name = name
-        self.root = root
+        self.params = params
         self.version = version
         self.codex = Codex()
 
@@ -61,7 +59,7 @@ class DataManager:
         Initialize the participants for the experiment.
         """
         columns = ["Session", "Task", "Completed", "Experimenter", "Experiment", "Version"]
-        columns += [k.replace("_", "") for k in self.settings.exp["Subjects"].keys()]
+        columns += [k.replace("_", "") for k in self.params["Subjects"].keys()]
         self.participants = pd.DataFrame(columns=columns)
 
     def load_participants(self, file_path):
@@ -90,24 +88,21 @@ class DataManager:
             sub_df = sub_info
 
         pids = self.participants["PID"].values.astype(int)
-        sub_id = int(sub_df["PID"].values[0])
-        ses_id = int(sub_df["Session"].values[0])
-        task_id = sub_df["Task"].values[0]
-        if sub_id not in pids:
+        self.sub_id = int(sub_df["PID"].values[0])
+        self.ses_id = int(sub_df["Session"].values[0])
+        self.task_id = sub_df["Task"].values[0]
+        if self.sub_id not in pids:
             self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
         else:
             duplicate = self.participants.loc[
-                (self.participants["PID"] == sub_id) &
-                (self.participants["Session"] == ses_id) &
-                (self.participants["Task"] == task_id)
+                (self.participants["PID"] == self.sub_id) &
+                (self.participants["Session"] == self.ses_id) &
+                (self.participants["Task"] == self.task_id)
             ]
             if duplicate.shape[0] == 0:
                 self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
             else:
                 return self.codex.message("sub", "dup")
-        self.sub_id = sub_id
-        self.ses_id = ses_id
-        self.task_id = task_id
 
     def update_participant(self, col, value):
         """
@@ -136,7 +131,7 @@ class DataManager:
         """
         self.behavior = pd.DataFrame(columns=[
             "SubjectID", "SessionID", "TaskID", "BlockID", "BlockName", "BlockDuration_sec",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames", "TrialRepeated"
         ])
 
     def init_stimuli(self):
@@ -145,7 +140,7 @@ class DataManager:
         """
         self.stimuli = pd.DataFrame(columns=[
             "SubjectID", "SessionID", "TaskID", "BlockID", "BlockName", "BlockDuration_sec",
-            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames", "TrialRepeated"
         ])
 
     def init_frames(self):
@@ -153,7 +148,8 @@ class DataManager:
         Initialize the frames for the experiment.
         """
         self.frames = pd.DataFrame(columns=[
-            "SubjectID", "SessionID", "TaskID","BlockID", "TrialIndex",
+            "SubjectID", "SessionID", "TaskID", "BlockID", "BlockName",
+            "TrialIndex", "TrialNumber", "TrialDuration_ms", "TrialDuration_frames",
             "Period",
             "FrameIndex", "FrameDuration_ms", "Frame_TrialTime_ms"
         ])
@@ -202,50 +198,63 @@ class DataManager:
         """
         self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
 
-    def save_stimuli(self, file_path, block_id=None):
+    def collect_eye_samples(self, df):
+        """
+        Add a dictionary of data to the samples dataframe.
+
+        Args:
+            df (dataframe): The data to add to the samples dataframe.
+        """
+        self.eye_samples = pd.concat([self.eye_samples, df], ignore_index=True)
+
+    def collect_eye_events(self, events):
+        """
+        Add a dictionary of data to the events dataframe.
+
+        Args:
+            events (dict): The data to add to the events dataframe.
+        """
+        self.eye_events = pd.concat([self.eye_events, pd.DataFrame.from_dict(events)], ignore_index=True)
+
+    def reset(self):
+        """
+        Reset the data manager.
+        """
+        self.behavior = None
+        self.stimuli = None
+        self.frames = None
+        self.eye_events = None
+        self.eye_samples = None
+
+    def save_stimuli(self, file_path):
         """
         Save the stimulus data.
         """
-        if block_id is not None:
-            self.stimuli.loc[self.stimuli["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
-        else:
-            self.stimuli.to_csv(file_path, sep=",", index=False)
+        self.stimuli.to_csv(file_path, sep=",", index=False)
 
-    def save_behavior(self, file_path, block_id=None):
+    def save_behavior(self, file_path):
         """
         Save the behavioral data.
         """
-        if block_id is not None:
-            self.behavior.loc[self.behavior["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
-        else:
-            self.behavior.to_csv(file_path, sep=",", index=False)
+        self.behavior.to_csv(file_path, sep=",", index=False)
 
-    def save_frames(self, file_path, block_id=None):
+    def save_frames(self, file_path):
         """
         Save the frame data.
         """
-        if block_id is not None:
-            self.frames.loc[self.frames["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
-        else:
-            self.frames.to_csv(file_path, sep=",", index=False)
+        self.frames.to_csv(file_path, sep=",", index=False)
 
-    def save_eye_events(self, file_path, block_id=None):
+    def save_eye_events(self, file_path):
         """
         Save the eye events.
         """
-        if block_id is not None:
-            self.eye_events.loc[self.eye_events["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
-        else:
-            self.eye_events.to_csv(file_path, sep=",", index=False)
+        self.eye_events.to_csv(file_path, sep=",", index=False)
 
-    def save_eye_samples(self, file_path, block_id=None):
+    def save_eye_samples(self, file_path):
         """
         Save the eye samples.
         """
-        if block_id is not None:
-            self.eye_samples.loc[self.eye_samples["BlockID"] == int(block_id)].to_csv(file_path, sep=",", index=False)
-        else:
-            self.eye_samples.to_csv(file_path, sep=",", index=False)
+        self.eye_samples.to_csv(file_path, sep=",", index=False)
 
     def load_ses_behavior(self, beh_files):
         """

@@ -41,7 +41,7 @@ class FileManager:
         self.version = version
 
         # Directories
-        self.dirs = DirectoryManager(root)
+        self.dirs = DirectoryManager(root, version)
 
         # Config file
         self.participants = self.dirs.data / "participants.tsv"
@@ -71,6 +71,7 @@ class FileManager:
         if self.log.exists():
             self.log.unlink()
         self.log.touch()
+        self.log = str(self.log)
 
     def add_block(self, sub_id, ses_id, task_id, block_id):
 
@@ -114,13 +115,13 @@ class FileManager:
 
         edf_host_file = f"{sub_id}_{ses_id}_{block_id}.edf"
 
-        self.behavior = behav_file
-        self.stim_data = stim_file
-        self.frames = frame_file
-        self.eye_events = eye_event_file
-        self.eye_samples = eye_sample_file
-        self.edf_display = edf_display_file
-        self.edf_host = edf_host_file
+        self.behavior = str(behav_file)
+        self.stim_data = str(stim_file)
+        self.frames = str(frame_file)
+        self.eye_events = str(eye_event_file)
+        self.eye_samples = str(eye_sample_file)
+        self.edf_display = str(edf_display_file)
+        self.edf_host = str(edf_host_file)
 
         return errors
 
@@ -132,6 +133,16 @@ class FileManager:
         self.eye_events = re.sub(r"_block-\d+", "", self.eye_events)
         self.eye_samples = re.sub(r"_block-\d+", "", self.eye_samples)
         self.edf_display = re.sub(r"_block-\d+", "", self.edf_display)
+
+    def convert_to_str(self):
+
+        self.behavior = str(self.behavior)
+        self.stim_data = str(self.stim_data)
+        self.frames = str(self.frames)
+        self.eye_events = str(self.eye_events)
+        self.eye_samples = str(self.eye_samples)
+        self.edf_display = str(self.edf_display)
+        self.edf_host = str(self.edf_host)
 
 
 class DirectoryManager:

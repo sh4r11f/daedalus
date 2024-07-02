@@ -41,6 +41,7 @@ class SettingsManager:
         settings = read_config(self.config_dir / "settings.yaml")
         self.study = settings["Study"]
         self.platform = settings["Platforms"][platform]
+        self.simulation = settings["Simulation"]
 
         config_files = {
             "analysis": "analysis.yaml",
@@ -70,10 +71,16 @@ class SettingsManager:
         else:
             self.gamma = None
 
-        tracker_file = self.config_dir / "tracker.yaml"
-        tracker_name = self.platform["Tracker"]
+        tracker_file = self.config_dir / "eyetrackers.yaml"
+        tracker_name = self.exp["General"]["tracker"]
         if tracker_file.exists():
             trackers = read_config(tracker_file)
             self.tracker = trackers.get(tracker_name, None)
         else:
             self.tracker = None
+
+        self.task = None
+
+    def select_task(self, task_id):
+        self.task = self.exp["Tasks"][task_id]
+        return self.task

@@ -18,8 +18,6 @@
 #
 # ==================================================================================================== #
 from pathlib import Path
-from typing import Union
-from datetime import date
 
 from emoji import emojize
 
@@ -37,8 +35,6 @@ from daedalus.factory import (
 )
 from daedalus.codes import Codex
 from daedalus import log_handler, utils
-
-# from daedalus.data.database import PsychoPhysicsDatabase
 
 
 class PsychoPhysicsExperiment:
@@ -63,22 +59,30 @@ class PsychoPhysicsExperiment:
         platform (str): Platform for the experiment.
         debug (bool): Debug mode for the experiment.
     """
-    def __init__(self, name, version, root: Union[str, Path], platform: str, debug: bool):
+    def __init__(self, name, version, root, task_name, platform, mode):
 
         # Setup
         self.exp_type = 'psychophysics'
         self.name = name
         self.version = version
         self.root = Path(root)
+        self.task_name = task_name
         self.platform = platform
-        self.debug = debug
-        self.today = date.today().strftime("%b-%d-%Y")
-
-        # Settings
-        self.settings = SettingsManager(root, version, platform)
+        if mode == "debug":
+            self.debug = True
+        else:
+            if mode == "simulation":
+                self.debug = True
+                self.simulation = True
+            else:
+                self.debug = False
+                self.simulation = False
 
         # Directories and files
-        self.files = FileManager(self.settings.study["Shorthand"], root, version)
+        self.files = FileManager(self.name, root, version)
+
+        # Settings
+        self.settings = SettingsManager(self.files.dirs.config, version, platform)
 
         # Log
         self.codex = Codex()
@@ -100,13 +104,13 @@ class PsychoPhysicsExperiment:
         # Subject, session, block, and trial
         self.sub_id = None
         self.ses_id = None
-        self.block_id = None
-        self.trial_id = None
-        self.blocks = None
-        self.trials = None
+        self.settings.select_task(self.task_name)
+        self.task = TaskFactory(self.task_name, self.settings.task)
+        self.block = None
+        self.trial = None
 
         # Data
-        self.data = DataManager(self.name, self.root, self.version)
+        self.data = DataManager(self.name, self.settings.exp, self.version)
 
         # Clocks
         self.timer = TimeManager()
@@ -126,17 +130,16 @@ class PsychoPhysicsExperiment:
             sub_info = self.subject_registration_gui()
 
         # Session and task info
-        ses, task = self.session_task_selection_gui(sub_info)
+        ses, _ = self.session_task_selection_gui(sub_info)
 
         # Save the information
-        sub_info["Session"] = ses
-        sub_info["Task"] = task
-        sub_info["Experimenter"] = expert
         sub_info["Experiment"] = self.name
+        sub_info["Task"] = self.task_name
         sub_info["Version"] = self.version
+        sub_info["Session"] = ses
+        sub_info["Experimenter"] = expert
         self.sub_id = self._fix_id(sub_info["PID"].values[0])
         self.ses_id = self._fix_id(ses)
-        self.task_id = sub_info["Task"].values[0]
 
         # Initialize files
         self.files.add_session(self.sub_id, self.ses_id)
@@ -152,37 +155,30 @@ class PsychoPhysicsExperiment:
         # Save the subject info
         self.data.add_participant(sub_info)
 
-        # Stimuli and blocks and task
-        self.task = TaskFactory(self.settings.exp["Tasks"], self.task_id)
+        # Load blocks
+        self.task.load_blocks()
 
         # Save subject and log the start of the session
         self.logger.info("Greetings, my friend! I'm your experiment logger for the day.")
         self.logger.info(f"Looks like we're running a {self.exp_type} experiment called {self.name} (v{self.version}).")
-        self.logger.info(f"Today is {self.today}.")
+        self.logger.info(f"Today is {self.timer.today}.")
         self.logger.info(f"Subject {self.sub_id}")
         self.logger.info(f"Session {self.ses_id}")
-        self.logger.info(f"Task: {self.task_id}.")
+        self.logger.info(f"Task: {self.task_name}.")
         self.logger.info("Let's get started!")
         self.logger.info("-" * 80)
 
-    def prepare_block(self, block_id, repeat=False):
+    def prepare_block(self, block):
         """
         Prepare the block for the task.
-
-        Args:
-            block_id (int): Block number.
-            repeat (bool): Is the block a repeat?
         """
-        # Set the ID of the block
-        self.block_id = self._fix_id(block_id)
-        self.task.set_block(block_id)
+        self.block_id = self._fix_id(block.id)
 
         # Show the start of the block message
-        n_blocks = f"{len(self.task.n_blocks):02d}"
-        if repeat:
-            txt = f"You are repeating block {self.block_id}/{n_blocks}.\n\n"
+        if block.repeat:
+            txt = f"You are repeating block {self.block_id}/{self.task.n_blocks:02d}.\n\n"
         else:
-            txt = f"You are about to begin block {self.block_id}/{n_blocks}.\n\n"
+            txt = f"You are about to begin block {self.block_id}/{self.task.n_blocks:02d}.\n\n"
         txt += "Press Space to start."
         while True:
             resp = self.show_msg(txt)
@@ -202,15 +198,11 @@ class PsychoPhysicsExperiment:
                 self.block_info(f"BLOCKID_{self.block_id}")
                 break
 
-    def prepare_trial(self, trial_id):
+    def prepare_trial(self, trial):
         """
         Prepare the trial for the block.
-
-        Args:
-            trial_id (int): Trial number.
         """
-        self.trial_id = self._fix_id(trial_id)
-        self.task.set_trial(trial_id)
+        self.trial_id = self._fix_id(trial.id)
         self.timer.start_trial()
         self.trial_info(self.codex.message("trial", "init"))
         self.trial_info(f"TRIALID_{self.trial_id}")
@@ -232,9 +224,9 @@ class PsychoPhysicsExperiment:
         self.display.window.flip()
         self.display.window.recordFrameIntervals = False
         self.display.window.frameIntervals = []
-        self.clear()
+        self.display.clear()
 
-    def wrap_block(self):
+    def wrap_block(self, block):
         """
         Wrap up the block.
         """
@@ -242,28 +234,25 @@ class PsychoPhysicsExperiment:
         self.block_info(self.codex.message("block", "fin"))
 
         # Save the data
-        self.data.save_behavior(self.files.behavior, self.block_id)
-        self.data.save_stimuli(self.files.stim_data, self.block_id)
-        self.data.save_frames(self.files.frames, self.block_id)
+        self.data.save_behavior(self.files.behavior)
+        self.data.save_stimuli(self.files.stim_data)
+        self.data.save_frames(self.files.frames)
 
         # Show the end of the block message
-        if int(self.block_id):
-            txt = emojize(f"Block {self.block_id} is done :rocket:")
+        if block.name == "practice":
+            txt = "Practice block is over."
         else:
-            txt = emojize("Practice block is over :rocket:")
-        txt += emojize("\n\nStay tuned...")
+            txt = f"Block {self.block_id} is finished."
+        txt += "\n\nStay tuned..."
         self.show_msg(txt, wait_time=self.settings.stimuli["Message"].get("wait_duration", 3))
         self.display.clear()
 
-    def stop_block(self, reason: str):
+    def stop_block(self, block):
         """
         Stop the block.
-
-        Args:
-            reason (str): The reason for stopping the block.
         """
         self.block_warning(self.codex.message("block", "stop"))
-        msg = f"Too many failed {reason}s! Have to stop this block..."
+        msg = f"An error has occured: {block.repeat}\n\nWe have to stop this block..."
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["warning_duration"], msg_type="warning")
 
     def turn_off(self):
@@ -276,13 +265,9 @@ class PsychoPhysicsExperiment:
         msg += "\n\nThank you!"
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["duration"], msg_type="info")
         # Save
-        self.data.participants["Completed"] = pd.to_datetime(self.participants["Completed"])
+        self.data.participants["Completed"] = pd.to_datetime(self.data.participants["Completed"])
         self.data.update_participant("Completed", 1)
-        self.data.save_participants(self.files["participants"])
-        self.files.remove_block_from_names()
-        self.data.save_stimuli(self.files.stim_data)
-        self.data.save_behavioral(self.file.behavior)
-        self.data.save_frames(self.files.frames)
+        self.data.save_participants(self.files.participants)
         # Quit
         self.goodbye()
 
@@ -394,40 +379,6 @@ class PsychoPhysicsExperiment:
             return [self._fix_id(i) for i in id_]
         return id_
 
-    def _get_ses_tasks(self):
-        """
-        Get the tasks for the session.
-
-        Returns:
-            list: List of tasks for the session.
-        """
-        return utils.find_in_configs(self.settings.exp["Tasks"], "Session", self.ses_id)["tasks"]
-
-    def _get_task_blocks(self):
-        """
-        Get the blocks for the task.
-
-        Returns:
-            list: List of blocks for the task.
-        """
-        return self.settings.exp["Tasks"][self.task_id]["blocks"]
-
-    def get_remaining_blocks(self):
-        """
-        Check the completed blocks for the task.
-
-        Returns:
-            list: List of completed blocks for the task.
-        """
-        all_blocks = self._get_task_blocks()
-        files = self.ses_data_dir.glob(
-            f"sub-{self.sub_id}_ses-{self.ses_id}_task-{self.task_id}_block-*_behavioral.csv"
-        )
-        comp_blocks = [file.stem.split("_")[-2].split("-")[1] for file in files]
-        remain_blocks = [block for block in all_blocks if block not in comp_blocks]
-
-        return remain_blocks
-
     def hello_gui(self):
         """
         GUI for choosing/registering subjects.
@@ -438,22 +389,21 @@ class PsychoPhysicsExperiment:
         Raises:
             ValueError: If the experiment is cancelled.
         """
-        params = self.settings.stimuli
-        emos = params["Emojis"]
+        emos = self.settings.stimuli["Emojis"]
         dlg = gui.Dlg(
             title="Yo!",
-            font=params["Display"]["gui_font"],
-            font_size=params["Display"]["gui_font_size"],
-            size=int(params["Display"]["gui_size"]),
+            font=self.settings.stimuli["Display"]["gui_font"],
+            font_size=self.settings.stimuli["Display"]["gui_font_size"],
+            size=int(self.settings.stimuli["Display"]["gui_size"]),
             labelButtonOK=emojize(f"Let's Go {emos['lets_go']}"),
             labelButtonCancel=emojize(f"Go Away {emos['go_away']}"),
             alwaysOnTop=True
         )
         # Add the experiment info
-        color = utils.str2tuple(params["Display"]["gui_text_color"])
+        color = utils.str2tuple(self.settings.stimuli["Display"]["gui_text_color"])
         dlg.addText("Experiment", color=color)
         dlg.addFixedField(key="title", label=emojize(f"{emos['title']}Title"), initial=emojize(f"{self.name}"))
-        dlg.addFixedField(key="date", label=emojize(f"{emos['date']}Date"), initial=self.today)
+        dlg.addFixedField(key="date", label=emojize(f"{emos['date']}Date"), initial=self.timer.today)
         dlg.addFixedField(key="version", label=emojize(f"{emos['version']}Version"), initial=self.version)
         dlg.addFixedField(
             key="debug",
@@ -479,11 +429,15 @@ class PsychoPhysicsExperiment:
             choices=[emojize("Register"), emojize("Load")]
         )
 
-        info = dlg.show()
-        if dlg.OK:
-            return info["selection"], info["experimenter"]
+        if self.simulation:
+            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            return self.settings.simulation["selection"], self.settings.simulation["experimenter"]
         else:
-            raise SystemExit("Experiment cancelled.")
+            info = dlg.show()
+            if dlg.OK:
+                return info["selection"], info["experimenter"]
+            else:
+                raise SystemExit("Experiment cancelled.")
 
     def subject_registration_gui(self):
         """
@@ -540,15 +494,22 @@ class PsychoPhysicsExperiment:
                         dlg.addField(key=field_key, label=emojize(f"{emos[em_key]} {field_name}"), initial=value)
 
         # Show the dialog
-        info = dlg.show()
-        if dlg.OK:
+        if self.simulation:
+            info = dlg.show(wait=self.settings.simulation["wait_gui"])
             for col in self.data.participants.columns:
                 if col not in info.keys():
                     info[col] = None
-            sub_df = pd.DataFrame.from_dict({k: [v] for k, v in info.items()}, orient="columns")
-            return sub_df
+            info["PID"] = self.settings.simulation["pid"]
+            return pd.DataFrame.from_dict({k: [v] for k, v in info.items()}, orient="columns")
         else:
-            raise SystemExit("Subject registration cancelled.")
+            info = dlg.show()
+            if dlg.OK:
+                for col in self.data.participants.columns:
+                    if col not in info.keys():
+                        info[col] = None
+                return pd.DataFrame.from_dict({k: [v] for k, v in info.items()}, orient="columns")
+            else:
+                raise SystemExit("Subject registration cancelled.")
 
     def subject_loadation_gui(self):
         """
@@ -584,14 +545,19 @@ class PsychoPhysicsExperiment:
         dlg.addField(key="sub", label=emojize(f"{emos['pid']} PID (Initials)"), choices=pid_initials)
 
         # Show the dialog
-        info = dlg.show()
-        if dlg.OK:
-            # Load the subject info
-            pid = info["sub"].split(" ")[0]
-            sub_df = self.data.participants.loc[self.data.participants["PID"].astype(int) == int(pid), :]
-            return sub_df
+        if self.simulation:
+            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            pid = self.settings.simulation["pid"]
+            return self.data.participants.loc[self.data.participants["PID"].astype(int) == int(pid), :]
         else:
-            raise SystemExit("Subject loadation cancelled.")
+            info = dlg.show()
+            if dlg.OK:
+                # Load the subject info
+                pid = info["sub"].split(" ")[0]
+                sub_df = self.data.participants.loc[self.data.participants["PID"].astype(int) == int(pid), :]
+                return sub_df
+            else:
+                raise SystemExit("Subject loadation cancelled.")
 
     def session_task_selection_gui(self, sub_df):
         """
@@ -636,32 +602,46 @@ class PsychoPhysicsExperiment:
                     )
 
         # Add sessions and tasks that are available
-        complete = sub_df.loc[~(pd.isnull(sub_df["Completed"])), ["Session", "Task"]]
-        choices = []
-        for ses in self.settings.exp["Sessions"]:
-            if ses["id"] not in complete["Session"].values:
-                for task in ses["tasks"]:
-                    choices.append(f"{ses['id']} ({task})")
-            else:
-                burnt_tasks = complete.loc[complete["Session"] == ses["id"], "Task"].values
-                available_tasks = [task for task in ses["tasks"] if task not in burnt_tasks]
-                for task in available_tasks:
-                    choices.append(f"{ses['id']} ({task})")
-        dlg.addField(
-            key="choice",
-            label=emojize(f"{emos['session']} Session (Task)"),
-            choices=choices,
-        )
+        tasks = list(self.settings.exp["Tasks"].keys())
+        done = sub_df.loc[~(pd.isnull(sub_df["Completed"])), ["Session", "Task"]]
+        remaining = [task for task in tasks if task not in done["Task"].values]
+        if self.task_name not in remaining:
+            dlg.addFixedField(key="error", label="ERROR!", initial="This task is not available for this participant.")
+        else:
+            choices = []
+            for ses in self.settings.exp["Sessions"]:
+                if ses["id"] not in done["Session"].values:
+                    choices.append(f"{ses['id']}")
+        # for ses in self.settings.exp["Sessions"]:
+        #     if ses["id"] not in complete["Session"].values:
+        #         for task in ses["tasks"]:
+        #             choices.append(f"{ses['id']} ({task})")
+        #     else:
+        #         burnt_tasks = complete.loc[complete["Session"] == ses["id"], "Task"].values
+        #         available_tasks = [task for task in ses["tasks"] if task not in burnt_tasks]
+        #         for task in available_tasks:
+        #             choices.append(f"{ses['id']} ({task})")
+        # dlg.addField(
+        #     key="choice",
+        #     label=emojize(f"{emos['session']} Session (Task)"),
+        #     choices=choices,
+        # )
 
         # Show the dialog
-        info = dlg.show()
-        if dlg.OK:
-            ses, task = info["choice"].split(" ")
-            ses = self._fix_id(ses)
-            task = task[1:-1]
-            return ses, task
+        if self.simulation:
+            info = dlg.show(wait=self.settings.simulation["wait_gui"])
+            return self.settings.simulation["session"], self.task_name
         else:
-            raise SystemExit("Session selection cancelled.")
+            info = dlg.show()
+            if dlg.OK:
+                # ses, task = info["choice"].split(" ")
+                ses = info["choice"]
+                ses = self._fix_id(ses)
+                # task = task[1:-1]
+                task = self.task_name
+                return ses, task
+            else:
+                raise SystemExit("Session selection cancelled.")
 
     def system_check(self, rf_thresh: float = 0.5, ram_thresh: int = 1000) -> str:
         """
@@ -673,8 +653,8 @@ class PsychoPhysicsExperiment:
         """
         # Initial system check
         run_info = info.RunTimeInfo(
-            version=self.settings["Study"]["Version"],
-            win=self.window,
+            version=self.version,
+            win=self.display.window,
             refreshTest='grating',
             userProcsDetailed=True,
             verbose=True
@@ -686,7 +666,13 @@ class PsychoPhysicsExperiment:
         results.append("<Press Space to accept or Escape to quit>\n\n")
 
         # Refresh rate
-        rf = self.window.getActualFrameRate(nIdentical=20, nMaxFrames=100, nWarmUpFrames=10, threshold=rf_thresh)
+        rf = self.display.window.getActualFrameRate(
+            nIdentical=20,
+            nMaxFrames=100,
+            nWarmUpFrames=10,
+            threshold=rf_thresh,
+            infoMsg=False
+        )
         intended_rf = int(self.settings.monitor["refresh_rate"])
         if rf is None:
             self.logger.critical("No identical frame refresh times were found.")
@@ -726,7 +712,7 @@ class PsychoPhysicsExperiment:
 
         # Raise the priority of the experiment for CPU
         # Check if it's Mac OS X (these methods don't run on that platform)
-        if self.settings["Platforms"][self.platform]["OS"] in ["darwin", "Mac OS X"]:
+        if self.settings.platform["OS"] in ["darwin", "Mac OS X"]:
             self.logger.warning("Cannot raise the priority because you are on Mac OS X.")
             results.append("(✘) Cannot raise the priority because you are on Mac OS X.")
         else:
@@ -787,28 +773,32 @@ class PsychoPhysicsExperiment:
                 if all(isinstance(k, tuple) for k in wait_keys):
                     valid_keys += wait_keys
 
-        key_press = None
-        while True:
-            # Check for key presses
-            pressed = event.getKeys(modifiers=True)
-            for pk, mods in pressed:
-                pms = [mod for mod, val in mods.items() if val]
-                for vk, vm in valid_keys:
-                    if vm is None:
-                        if pk == vk:
-                            key_press = pk
-                    else:
-                        if (pk == vk) and (vm in pms):
-                            key_press = "+".join([vm, vk])
-                # Break if a key is pressed
+        if self.simulation:
+            key_press = self.settings.simulation["next_key"]
+            core.wait(self.settings.simulation["wait_text"])
+        else:
+            key_press = None
+            while True:
+                # Check for key presses
+                pressed = event.getKeys(modifiers=True)
+                for pk, mods in pressed:
+                    pms = [mod for mod, val in mods.items() if val]
+                    for vk, vm in valid_keys:
+                        if vm is None:
+                            if pk == vk:
+                                key_press = pk
+                        else:
+                            if (pk == vk) and (vm in pms):
+                                key_press = "+".join([vm, vk])
+                    # Break if a key is pressed
 
-            if wait_keys:
-                if key_press is not None:
+                if wait_keys:
+                    if key_press is not None:
+                        break
+                # Wait for a certain amount of time
+                if wait_time:
+                    core.wait(wait_time)
                     break
-            # Wait for a certain amount of time
-            if wait_time:
-                core.wait(wait_time)
-                break
 
         if key_press == "ctrl+c":
             self.goodbye(self.codex.message("usr", "term"))
@@ -829,7 +819,6 @@ class PsychoPhysicsExperiment:
             self.logger.critical(self.codex.message("exp", "term"))
             try:
                 # Save as much as you can
-                self.files.remove_block_from_names()
                 self.data.save_stimuli(self.files.stim_data)
                 self.data.save_behavioral(self.file.behavior)
                 self.data.save_frames(self.files.frames)
@@ -894,6 +883,33 @@ class PsychoPhysicsExperiment:
         """
         return cps * (1/self.settings.monitor["refresh_rate"])
 
+    def cpf2hz(self, cpf: float):
+        """
+        Converts cycles per frame to cycles per second:
+            cpf (cycles/frame) * rf (frame/s) = cps (cycles/s)
+
+        Args:
+            cpf (float): Cycles per frame.
+
+        Returns:
+            float: Cycles per second.
+        """
+        return cpf * self.settings.monitor["refresh_rate"]
+
+    def cpf2dps(self, cpf: float, cpd: float):
+        """
+        Converts cycles per frame to degrees per second:
+            cpf (cycles/frame) * 1/cpd (dva/cycles) * rf (frames/s) = dps (dva/s)
+
+        Args:
+            cpf (float): Cycles per frame.
+            cpd (float): Cycles per degree (spatial frequency).
+
+        Returns:
+            float: Degrees per second.
+        """
+        return cpf * (1/cpd) * self.settings.monitor["refresh_rate"]
+
     def hz2dpf(self, cps: float, cpd: float):
         """
         Converts cycles per second to degrees per frame:
@@ -936,7 +952,7 @@ class PsychoPhysicsExperiment:
         Returns:
             float: Pixels per second.
         """
-        ppd = deg2pix(1, self.monitor)
+        ppd = deg2pix(1, self.display.monitor)
         return cps * (1/cpd) * ppd
 
     def hz2ppf(self, cps: float, cpd: float):
@@ -951,7 +967,7 @@ class PsychoPhysicsExperiment:
         Returns:
             float: Pixels per frame.
         """
-        ppd = deg2pix(1, self.monitor)
+        ppd = deg2pix(1, self.display.monitor)
         return cps * (1/cpd) * ppd * (1/self.settings.monitor["refresh_rate"])
 
     def cpd2cpp(self, cpd: float):
@@ -965,7 +981,7 @@ class PsychoPhysicsExperiment:
         Returns:
             float: Cycles per pixel.
         """
-        dpp = pix2deg(1, self.monitor)
+        dpp = pix2deg(1, self.display.monitor)
         return cpd * dpp
 
     def cpp2cpd(self, cpp: float):
@@ -979,21 +995,8 @@ class PsychoPhysicsExperiment:
         Returns:
             float: Cycles per degree.
         """
-        ppd = deg2pix(1, self.monitor)
+        ppd = deg2pix(1, self.display.monitor)
         return cpp * ppd
-
-    def time_index(self, time_point, frame_times):
-        """
-        Find the frame number for a given time.
-
-                Args:
-            time_point (float): The time point to find the frame number for.
-            frame_times (array): The frame times.
-
-        Returns:
-            int: The frame number.
-        """
-        return np.argmax(frame_times > time_point)
 
     @staticmethod
     def period_edge_frames(frames, period):

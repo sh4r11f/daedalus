@@ -55,6 +55,7 @@ class StimulusFactory:
             self.font_flles = None
         else:
             self.font_files = list(Path(font_dir).glob("*.otf")) + list(Path(font_dir).glob("*.ttf"))
+            self.font_files = [str(f) for f in self.font_files]
 
         self.monitor = None
         self.window = None
@@ -87,7 +88,8 @@ class StimulusFactory:
             width = deg2pix(width, self.monitor)
 
         stim = visual.TextStim(
-            self.window,
+            win=self.window,
+            text=text,
             font=params["font"],
             fontFiles=self.font_files,
             height=params["font_size"],
@@ -217,6 +219,52 @@ class StimulusFactory:
         )
         setattr(self, name, stim)
         return stim
+
+    def make_visual_mask(self, name):
+        """
+        Creates a dynamic mask stimulus.
+
+        Args:
+            name (str): The name of the stimulus.
+
+        Returns:
+            visual.GratingStim: The dynamic mask stimulus.
+        """
+        import psychopy
+        psychopy.plugins.activatePlugins()
+
+        params = self.params["Mask"]
+        size = params["size"]
+        sf = params["spatial_frequency"]
+        low_cut = params["lower_cutoff"]
+        up_cut = params["upper_cutoff"]
+        if self.window.units == "pix":
+            size = deg2pix(size, self.monitor)
+            sf = sf * pix2deg(1, self.monitor)
+            low_cut = low_cut * pix2deg(1, self.monitor)
+            up_cut = up_cut * pix2deg(1, self.monitor)
+        mask = visual.NoiseStim(
+            win=self.window,
+            name=name,
+            noiseType=params["type"],  # Black and white noise
+            noiseElementSize=size,  # Size of noise elements
+            noiseBaseSf=sf,  # Base spatial frequency
+            noiseBW=params["spatial_frquency_bandwidth"],  # Spatial frequency bandwidth
+            noiseBWO=params["orientation_bandwidth"],  # Orientation bandwidth (degrees)
+            noiseFilterLower=low_cut,  # Lower cutoff frequency for the filter
+            noiseFilterUpper=up_cut,  # Upper cutoff frequency for the filter
+            noiseFilterOrder=params["filter_order"],  # Filter order
+            size=size,  # Size of the noise patch
+            color=params["color"],  # Color of the noise
+            colorSpace='rgb',
+            opacity=1,
+            blendmode='avg',
+            contrast=1.0,
+            texRes=params["resolution"],  # Texture resolution
+            interpolate=False
+        )
+        setattr(self, name, mask)
+        return mask
 
     def make_single_drift(self, name):
         """
@@ -413,7 +461,7 @@ class StimulusFactory:
             height = deg2pix(height, self.monitor)
         else:
             win_w = pix2deg(win_w, self.monitor)
-            win_h = pix2deg(win_h, self.monitor)    
+            win_h = pix2deg(win_h, self.monitor)
         width = win_w / params["total_reward"]
         position = (-win_w / 2 + width / 2, -win_h / 2 + height / 2)
 
