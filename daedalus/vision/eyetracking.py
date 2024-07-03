@@ -718,6 +718,34 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         return status, events
 
+    def get_sacc_landing(self, events):
+        """
+        Get the end gaze coordinates.
+
+        Args:
+            event (dict): The event dictionary.
+
+        Returns:
+            tuple: The gaze coordinates.
+        """
+        for event in events:
+            if event["event_type"] == "saccade_end":
+                gx, gy = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
+        return gx, gy
+
+    def raw_events_to_df(self, events):
+        """
+        Convert raw events to a DataFrame without any processing.
+
+        Args:
+            events (list): The list of events, each is a dictionary.
+
+        Returns:
+            pd.DataFrame: The DataFrame of the events.
+        """
+        df = pd.DataFrame(events)
+        return df
+
     def parse_fixation_update_event(self, event, trial):
         """
         Parse the fixation update event.
@@ -729,14 +757,12 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             tuple: The gaze coordinates.
         """
         start = event["time_start"]
-        start_frame = utils.time_index(start, trial.tracker_times)
         end = event["time_end"]
-        end_frame = utils.time_index(end, trial.tracker_times)
         duration = end - start
-        gaze_avg_x = event["gaze_avg_x"]
-        gaze_avg_y = event["gaze_avg_y"]
-        ppd_avg_x = event["ppd_avg_x"]
-        ppd_avg_y = event["ppd_avg_y"]
+        start_frame = utils.time_index(start, trial.tracker_times)
+        end_frame = utils.time_index(end, trial.tracker_times)
+        gaze_avg_x, gaze_avg_y = self.mat2cart(event["gaze_avg_x"], event["gaze_avg_y"])
+        ppd_avg_x, ppd_avg_y = self.mat2cart(event["ppd_avg_x"], event["ppd_avg_y"])
 
         df = pd.DataFrame({
             "EventType": ["FixationUpdate"],
@@ -771,15 +797,31 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             pd.DataFrame: The parsed data.
         """
+        start = event["time_start"]
         end = event["time_end"]
+        start_frame = utils.time_index(start, trial.tracker_times)
         end_frame = utils.time_index(end, trial.tracker_times)
-        gaze_end_x = event["gaze_end_x"]
-        gaze_end_y = event["gaze_end_y"]
-        ppd_end_x = event["ppd_end_x"]
-        ppd_end_y = event["ppd_end_y"]
+        gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
+        gaze_end_x, gaze_end_y = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
+        gaze_avg_x, gaze_avg_y = self.mat2cart(event["gaze_avg_x"], event["gaze_avg_y"])
+        ppd_start_x, ppd_start_y = self.mat2cart(event["ppd_start_x"], event["ppd_start_y"])
+        ppd_end_x, ppd_end_y = self.mat2cart(event["ppd_end_x"], event["ppd_end_y"])
+        ppd_avg_x, ppd_avg_y = self.mat2cart(event["ppd_avg_x"], event["ppd_avg_y"])
 
         df = pd.DataFrame({
             "EventType": ["FixationEnd"],
+            "EventDuration_ms": [end - start],
+            "EventStart_FrameN": [start_frame],
+            "EventStart_TrackerTime_ms": [start],
+            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "GazeStartX_px": [gaze_start_x],
+            "GazeStartY_px": [gaze_start_y],
+            "GazeStartX_ppd": [ppd_start_x],
+            "GazeStartY_ppd": [ppd_start_y],
+            "GazeStartX_dva": [pix2deg(gaze_start_x, self.display.monitor)],
+            "GazeStartY_dva": [pix2deg(gaze_start_y, self.display.monitor)],
+            "GazeStartX_Tracker_dva": [gaze_start_x / ppd_start_x],
+            "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
             "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
@@ -790,7 +832,120 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "GazeEndX_dva": [pix2deg(gaze_end_x, self.display.monitor)],
             "GazeEndY_dva": [pix2deg(gaze_end_y, self.display.monitor)],
             "GazeEndX_Tracker_dva": [gaze_end_x / ppd_end_x],
-            "GazeEndY_Tracker_dva": [gaze_end_y / ppd_end_y]
+            "GazeEndY_Tracker_dva": [gaze_end_y / ppd_end_y],
+            "GazeAvgX_px": [gaze_avg_x],
+            "GazeAvgY_px": [gaze_avg_y],
+            "GazeAvgX_ppd": [ppd_avg_x],
+            "GazeAvgY_ppd": [ppd_avg_y],
+            "GazeAvgX_dva": [pix2deg(gaze_avg_x, self.display.monitor)],
+            "GazeAvgY_dva": [pix2deg(gaze_avg_y, self.display.monitor)],
+            "GazeAvgX_Tracker_dva": [gaze_avg_x / ppd_avg_x],
+            "GazeAvgY_Tracker_dva": [gaze_avg_y / ppd_avg_y],
+            "PupilStart": [event["pupil_start"]],
+            "PupilEnd": [event["pupil_end"]],
+            "PupilAvg": [event["pupil_avg"]]
+        })
+
+        return df
+
+    def parse_saccade_start_event(self, event, trial):
+        """
+        Parse the saccade start event.
+
+        Args:
+            event (dict): The saccade start event.
+            trial (Trial): The trial object.
+
+        Returns:
+            pd.DataFrame: The parsed data.
+        """
+        start = event["time_start"]
+        start_frame = utils.time_index(start, trial.tracker_times)
+        gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
+        ppd_start_x, ppd_start_y = self.mat2cart(event["ppd_start_x"], event["ppd_start_y"])
+
+        df = pd.DataFrame({
+            "EventType": ["SaccadeStart"],
+            "EventStart_FrameN": [start_frame],
+            "EventStart_TrackerTime_ms": [start],
+            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "GazeStartX_px": [gaze_start_x],
+            "GazeStartY_px": [gaze_start_y],
+            "GazeStartX_ppd": [ppd_start_x],
+            "GazeStartY_ppd": [ppd_start_y],
+            "GazeStartX_dva": [pix2deg(gaze_start_x, self.display.monitor)],
+            "GazeStartY_dva": [pix2deg(gaze_start_y, self.display.monitor)],
+            "GazeStartX_Tracker_dva": [gaze_start_x / ppd_start_x],
+            "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y]
+        })
+
+        return df
+
+    def parse_saccade_end_event(self, event, trial):
+        """
+        Parse the saccade end event.
+
+        Args:
+            event (dict): The saccade end event.
+            trial (Trial): The trial object.
+
+        Returns:
+            pd.DataFrame: The parsed data.
+        """
+        start = event["time_start"]
+        end = event["time_end"]
+        start_frame = utils.time_index(start, trial.tracker_times)
+        end_frame = utils.time_index(end, trial.tracker_times)
+        gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
+        gaze_end_x, gaze_end_y = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
+        ppd_start_x, ppd_start_y = self.mat2cart(event["ppd_start_x"], event["ppd_start_y"])
+        ppd_end_x, ppd_end_y = self.mat2cart(event["ppd_end_x"], event["ppd_end_y"])
+        amp_x = event["amp_x"]
+        amp_y = event["amp_y"]
+        vel_start = event["start_vel"]
+        vel_end = event["end_vel"]
+        vel_peak = event["peak_vel"]
+        vel_avg = event["avg_vel"]
+
+        df = pd.DataFrame({
+            "EventType": ["SaccadeEnd"],
+            "EventDuration_ms": [end - start],
+            "EventStart_FrameN": [start_frame],
+            "EventStart_TrackerTime_ms": [start],
+            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "GazeStartX_px": [gaze_start_x],
+            "GazeStartY_px": [gaze_start_y],
+            "GazeStartX_ppd": [ppd_start_x],
+            "GazeStartY_ppd": [ppd_start_y],
+            "GazeStartX_dva": [pix2deg(gaze_start_x, self.display.monitor)],
+            "GazeStartY_dva": [pix2deg(gaze_start_y, self.display.monitor)],
+            "GazeStartX_Tracker_dva": [gaze_start_x / ppd_start_x],
+            "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
+            "EventEnd_FrameN": [end_frame],
+            "EventEnd_TrackerTime_ms": [end],
+            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "GazeEndX_px": [gaze_end_x],
+            "GazeEndY_px": [gaze_end_y],
+            "GazeEndX_ppd": [ppd_end_x],
+            "GazeEndY_ppd": [ppd_end_y],
+            "GazeEndX_dva": [pix2deg(gaze_end_x, self.display.monitor)],
+            "GazeEndY_dva": [pix2deg(gaze_end_y, self.display.monitor)],
+            "GazeEndX_Tracker_dva": [gaze_end_x / ppd_end_x],
+            "GazeEndY_Tracker_dva": [gaze_end_y / ppd_end_y],
+            "SaccAmpX_dva": [amp_x],
+            "SaccAmpX_px": [deg2pix(amp_x, self.display.monitor)],
+            "SaccAmpY_dva": [amp_y],
+            "SaccAmpY_px": [deg2pix(amp_y, self.display.monitor)],
+            "SaccStartVel_dps": [vel_start],
+            "SaccEndVel_dps": [vel_end],
+            "SaccStartVel_pps": [self.dps2pps(vel_start)],
+            "SaccEndVel_pps": [self.dps2pps(vel_end)],
+            "SaccPeakVel_dps": [event['peak_vel']],
+            "SaccPeakVel_pps": [self.dps2pps(vel_peak)],
+            "SaccAvgVel_dps": [event['avg_vel']],
+            "SaccAvgVel_pps": [self.dps2pps(vel_avg)],
+            "SaccAngle_deg": [event['angle']],
+            "SaccAngle_rad": [np.radians(event['angle'])]
         })
 
         return df
@@ -965,7 +1120,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 # Raise the error
                 raise SystemExit(f"Experiment ended with error: {raise_error}")
         else:
-            self.logger.info("Bye Bye Experiment.")
+            self.logger.info(f"Bye Bye Experiment. Duration: {self.timer.exp.getTime() / 60:.3f} minutes")
             self.logger.close_file()
             core.quit()
 

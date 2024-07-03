@@ -55,24 +55,6 @@ class TaskFactory:
             block.idx = idx
             block.id = idx + 1
 
-    def shuffle_except_practice(self):
-        """
-        Shuffle all blocks except the practice block.
-        """
-        index = [idx for idx, block in enumerate(self.blocks) if block.name == "practice"]
-
-        # Extract the element to keep constant
-        constant_element = self.blocks[index]
-
-        # Create a new array excluding the constant element
-        arr_to_shuffle = self.blocks[:index] + self.blocks[index+1:]
-
-        # Shuffle the new array
-        random.shuffle(arr_to_shuffle)
-
-        # Insert the constant element back into its original position
-        self.blocks = arr_to_shuffle[:index] + [constant_element] + arr_to_shuffle[index:]
-
     def put_practice_first(self):
         """
         Move the practice block to the first position in the list of blocks.
@@ -94,7 +76,6 @@ class TaskFactory:
         conc_blocks = []
         for block in self.params["blocks"]:
             for _ in range(block["n_repeats"]):
-                block.pop("n_repeats", None)
                 conc_blocks.append(block)
         return conc_blocks
 
@@ -149,6 +130,10 @@ class BlockFactory:
         else:
             self.trials.append(trial)
 
+    def add_trials(self, trials):
+        for trial in trials:
+            self.add_trial(trial)
+
     def get_trial(self, trial_idx):
         return self.trials[trial_idx]
 
@@ -198,6 +183,7 @@ class TrialFactory:
         # Setup
         self.idx = trial_idx
         self.id = trial_idx + 1
+        self.name = kwargs.get("name", None)
         self._frames = frames
         self.break_frame = len(frames)
 

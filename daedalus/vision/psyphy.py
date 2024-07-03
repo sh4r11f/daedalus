@@ -911,6 +911,20 @@ class PsychoPhysicsExperiment:
         """
         return cpf * (1/cpd) * self.settings.monitor["refresh_rate"]
 
+    def dps2pps(self, dps: float):
+        """
+        Converts degrees per second to pixels per second:
+            dps (dva/s) * ppd (pix/dva) = pps (pix/s)
+
+        Args:
+            dps (float): Degrees per second.
+
+        Returns:
+            float: Pixels per second.
+        """
+        ppd = deg2pix(1, self.display.monitor)
+        return dps * ppd
+
     def hz2dpf(self, cps: float, cpd: float):
         """
         Converts cycles per second to degrees per frame:
@@ -998,6 +1012,21 @@ class PsychoPhysicsExperiment:
         """
         ppd = deg2pix(1, self.display.monitor)
         return cpp * ppd
+
+    def pps2dps(self, pps: float, ppd=None):
+        """
+        Converts pixels per second to degrees per second:
+            pps (pix/s) * 1/ppd (dva/pix) = dps (dva/s)
+
+        Args:
+            pps (float): Pixels per second.
+
+        Returns:
+            float: Degrees per second.
+        """
+        if ppd is None:
+            ppd = pix2deg(1, self.display.monitor)
+        return pps * (1/ppd)
 
     @staticmethod
     def period_edge_frames(frames, period):
