@@ -439,7 +439,7 @@ class StimulusFactory:
         Returns:
             visual.Rect: The reward bar stimulus.
         """
-        rewbar_params = self.params["RewardBar"]
+        rewbar_params = self.params["Reward"]["Bar"]
         w, h = self.window.size
         height = rewbar_params["height"]
         if self.window.units == "pix":
@@ -472,7 +472,7 @@ class StimulusFactory:
         Returns:
             visual.Rect: The bar filler stimulus.
         """
-        params = self.params["BarFiller"]
+        params = self.params["Reward"]["Filler"]
         win_w, win_h = self.window.size
 
         # Normalize
@@ -482,7 +482,7 @@ class StimulusFactory:
         else:
             win_w = pix2deg(win_w, self.monitor)
             win_h = pix2deg(win_h, self.monitor)
-        width = win_w / params["total_reward"]
+        width = win_w / params["max_reward"]
         position = (-win_w / 2 + width / 2, -win_h / 2 + height / 2)
 
         stim = visual.Rect(
@@ -498,7 +498,7 @@ class StimulusFactory:
         setattr(self, name, stim)
         return stim
 
-    def make_feedback_img(self, name, stim_file):
+    def make_reward_image(self, name, stim_file):
         """
         Creates a feedback image stimulus.
 
@@ -510,10 +510,10 @@ class StimulusFactory:
             visual.ImageStim: The feedback image stimulus.
         """
         # Load the correct image file based on the correctness of the feedback
-        img_params = self.params["FeedbackImage"]
+        params = self.params["Reward"]["Image"]
 
         # Convert size
-        size = img_params["size"]
+        size = params["size"]
         if self.window.units == "pix":
             size = deg2pix(size, self.monitor)
 
@@ -528,7 +528,7 @@ class StimulusFactory:
         setattr(self, name, feedback_img)
         return feedback_img
 
-    def make_win_text(self, name, text=None):
+    def make_reward_text(self, name, text=None):
         """
         Creates a feedback text stimulus.
 
@@ -538,7 +538,7 @@ class StimulusFactory:
         Returns:
             visual.TextStim: The feedback text stimulus.
         """
-        params = self.params["WinText"]
+        params = self.params["Reward"]["Text"]
         if text is None:
             text = params.get(["text"])
         stim = visual.TextStim(

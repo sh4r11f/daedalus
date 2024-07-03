@@ -166,7 +166,7 @@ class FileManager:
         # Load stimulus files
         files = list(self.dirs.stimuli.glob("*.png")) + list(self.dirs.stimuli.glob("*.jpg"))
         for file in files:
-            setattr(self, file, str(file))
+            setattr(self, str(file.stem), str(file))
 
     def get_file(self, file_name):
         """

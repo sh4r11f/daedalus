@@ -200,6 +200,8 @@ class TrialFactory:
         self.error = None
         self.fake_response = None
         self.fake_response_onset = -1
+        self.fake_choice = None
+        self.fake_choice_on_fr = -1
 
         self.index = 0
 

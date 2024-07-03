@@ -902,10 +902,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         ppd_end_x, ppd_end_y = self.mat2cart(event["ppd_end_x"], event["ppd_end_y"])
         amp_x = event["amp_x"]
         amp_y = event["amp_y"]
-        vel_start = event["start_vel"]
-        vel_end = event["end_vel"]
-        vel_peak = event["peak_vel"]
-        vel_avg = event["avg_vel"]
+        vel_start = event["velocity_start"]
+        vel_end = event["velocity_end"]
+        vel_peak = event["velocity_peak"]
+        vel_avg = event["velocity_avg"]
 
         df = pd.DataFrame({
             "EventType": ["SaccadeEnd"],
@@ -940,9 +940,9 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "SaccEndVel_dps": [vel_end],
             "SaccStartVel_pps": [self.dps2pps(vel_start)],
             "SaccEndVel_pps": [self.dps2pps(vel_end)],
-            "SaccPeakVel_dps": [event['peak_vel']],
+            "SaccPeakVel_dps": [event['velocity_peak']],
             "SaccPeakVel_pps": [self.dps2pps(vel_peak)],
-            "SaccAvgVel_dps": [event['avg_vel']],
+            "SaccAvgVel_dps": [event['velocity_avg']],
             "SaccAvgVel_pps": [self.dps2pps(vel_avg)],
             "SaccAngle_deg": [event['angle']],
             "SaccAngle_rad": [np.radians(event['angle'])]

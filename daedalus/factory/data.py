@@ -112,8 +112,8 @@ class DataManager:
             sub_info (dict): The subject information.
         """
         self.participants.loc[
-            (self.participants["PID"] == self.sub_id) &
-            (self.participants["Session"] == self.ses_id) &
+            (self.participants["PID"] == int(self.sub_id)) &
+            (self.participants["Session"] == int(self.ses_id)) &
             (self.participants["Task"] == self.task_id), col] = value
 
     def save_participants(self, file_path):
