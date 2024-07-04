@@ -46,7 +46,7 @@ class SettingsManager:
         config_files = {
             "analysis": "analysis.yaml",
             "exp": "experiment.yaml",
-            "schedules": "schedules.yaml",
+            "schedule": "schedule.yaml",
             "stimuli": "stimuli.yaml"
         }
 

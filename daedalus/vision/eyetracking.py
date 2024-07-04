@@ -759,20 +759,21 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         start = event["time_start"]
         end = event["time_end"]
         duration = end - start
-        start_frame = utils.time_index(start, trial.tracker_times)
-        end_frame = utils.time_index(end, trial.tracker_times)
+        start_idx = utils.time_index(start, trial.choice_tracker_times)
+        start_frame = trial.choice_frames[start_idx]
+        end_idx = utils.time_index(end, trial.choice_tracker_times)
+        end_frame = trial.choice_frames[end_idx]
         gaze_avg_x, gaze_avg_y = self.mat2cart(event["gaze_avg_x"], event["gaze_avg_y"])
         ppd_avg_x, ppd_avg_y = self.mat2cart(event["ppd_avg_x"], event["ppd_avg_y"])
 
         df = pd.DataFrame({
             "EventType": ["FixationUpdate"],
-            "EventPeriod": [trial.frames[start_frame]],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.choice_times[start_frame]],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.choice_times[end_frame]],
             "EventDuration_ms": [duration],
             "GazeAvgX_px": [gaze_avg_x],
             "GazeAvgY_px": [gaze_avg_y],
@@ -799,8 +800,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         start = event["time_start"]
         end = event["time_end"]
-        start_frame = utils.time_index(start, trial.tracker_times)
-        end_frame = utils.time_index(end, trial.tracker_times)
+        start_idx = utils.time_index(start, trial.choice_tracker_times)
+        start_frame = trial.choice_frames[start_idx]
+        end_idx = utils.time_index(end, trial.choice_tracker_times)
+        end_frame = trial.choice_frames[end_idx]
         gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
         gaze_end_x, gaze_end_y = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
         gaze_avg_x, gaze_avg_y = self.mat2cart(event["gaze_avg_x"], event["gaze_avg_y"])
@@ -813,7 +816,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventDuration_ms": [end - start],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.choice_times[start_frame]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -824,7 +827,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.choice_times[end_frame]],
             "GazeEndX_px": [gaze_end_x],
             "GazeEndY_px": [gaze_end_y],
             "GazeEndX_ppd": [ppd_end_x],
@@ -860,7 +863,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             pd.DataFrame: The parsed data.
         """
         start = event["time_start"]
-        start_frame = utils.time_index(start, trial.tracker_times)
+        start_idx = utils.time_index(start, trial.choice_tracker_times)
+        start_frame = trial.choice_frames[start_idx]
         gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
         ppd_start_x, ppd_start_y = self.mat2cart(event["ppd_start_x"], event["ppd_start_y"])
 
@@ -868,7 +872,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventType": ["SaccadeStart"],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.choice_times[start_frame]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -894,8 +898,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         start = event["time_start"]
         end = event["time_end"]
-        start_frame = utils.time_index(start, trial.tracker_times)
-        end_frame = utils.time_index(end, trial.tracker_times)
+        start_idx = utils.time_index(start, trial.choice_tracker_times)
+        start_frame = trial.choice_frames[start_idx]
+        end_idx = utils.time_index(end, trial.choice_tracker_times)
+        end_frame = trial.choice_frames[end_idx]
         gaze_start_x, gaze_start_y = self.mat2cart(event["gaze_start_x"], event["gaze_start_y"])
         gaze_end_x, gaze_end_y = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
         ppd_start_x, ppd_start_y = self.mat2cart(event["ppd_start_x"], event["ppd_start_y"])
@@ -912,7 +918,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventDuration_ms": [end - start],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.frame_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.choice_times[start_frame]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -923,7 +929,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.frame_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.choice_times[end_frame]],
             "GazeEndX_px": [gaze_end_x],
             "GazeEndY_px": [gaze_end_y],
             "GazeEndX_ppd": [ppd_end_x],

@@ -56,6 +56,7 @@ class Codex:
             "rew": 24,
             "sub": 25,
             "smp": 26,
+            "mask": 27,
         }
         self.state_codes = {
             "init": 0.0,
@@ -107,6 +108,7 @@ class Codex:
             "rew": "REWARD",
             "sub": "SUBJECT",
             "smp": "SAMPLE",
+            "mask": "MASK"
         }
         self.state_names = {
             "init": "START",

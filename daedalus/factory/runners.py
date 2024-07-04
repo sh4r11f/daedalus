@@ -178,14 +178,14 @@ class BlockFactory:
 
 
 class TrialFactory:
-    def __init__(self, trial_idx, frames, **kwargs):
+    def __init__(self, trial_idx, **kwargs):
 
         # Setup
         self.idx = trial_idx
         self.id = trial_idx + 1
         self.name = kwargs.get("name", None)
-        self._frames = frames
-        self.break_frame = len(frames)
+        self._frames = []
+        self.break_frame = -1
 
         self.eye_events = []
         self.eye_samples = []
@@ -200,8 +200,6 @@ class TrialFactory:
         self.error = None
         self.fake_response = None
         self.fake_response_onset = -1
-        self.fake_choice = None
-        self.fake_choice_on_fr = -1
 
         self.index = 0
 
@@ -211,7 +209,7 @@ class TrialFactory:
 
     @property
     def n_frames(self):
-        return len(self._frames[:self.break_frame])
+        return len(self._frames)
 
     @property
     def frames(self):
@@ -220,8 +218,6 @@ class TrialFactory:
     @frames.setter
     def frames(self, frames):
         self._frames = frames
-        self.break_frame = len(frames)
-        self.index = 0
 
     def repeated(self):
         """
@@ -236,7 +232,6 @@ class TrialFactory:
         self.key_press = None
         self.response = None
         self.error = None
-        self.index = 0
 
     def reset(self):
         """
@@ -251,6 +246,7 @@ class TrialFactory:
         self.key_press = None
         self.response = None
         self.error = None
+
         self.index = 0
 
     def s2ms(self, var_name):
