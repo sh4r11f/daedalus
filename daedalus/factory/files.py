@@ -178,9 +178,10 @@ class FileManager:
         Returns:
             str: The file path
         """
+        stem = file_name.split(".")[0]
         for attr in dir(self):
-            if file_name in attr:
-                return getattr(self, file_name)
+            if stem in attr:
+                return getattr(self, stem)
 
 
 class DirectoryManager:
@@ -209,7 +210,7 @@ class DirectoryManager:
         self.data = root / "data" / f"v{version}"
         self.data.mkdir(parents=True, exist_ok=True)
 
-        self.logs = root / "logs"
+        self.logs = self.data / "logs"
         self.logs.mkdir(parents=True, exist_ok=True)
 
         self.sub = None

@@ -153,6 +153,9 @@ class PsychoPhysicsExperiment:
         self.stimuli.make_message("exp_msg")
 
         # Save the subject info
+        self.data.sub_id = self.sub_id
+        self.data.ses_id = self.ses_id
+        self.data.task_name = self.task_name
         self.data.add_participant(sub_info)
 
         # Load blocks
@@ -216,11 +219,12 @@ class PsychoPhysicsExperiment:
         self.display.window.frameIntervals = []
         self.display.clear()
 
-    def stop_trial(self):
+    def stop_trial(self, trial):
         """
         Stop the trial.
         """
         self.trial_warning(self.codex.message("trial", "stop"))
+        self.trial_warning(trial.error)
         self.display.window.flip()
         self.display.window.recordFrameIntervals = False
         self.display.window.frameIntervals = []
@@ -251,8 +255,9 @@ class PsychoPhysicsExperiment:
         """
         Stop the block.
         """
-        self.block_warning(self.codex.message("block", "stop"))
-        msg = f"An error has occured: {block.repeat}\n\nWe have to stop this block..."
+        self.block_error(self.codex.message("block", "stop"))
+        self.block_error(block.error)
+        msg = f"An error has occured: {block.error}\n\nWe have to stop this block..."
         self.show_msg(msg, wait_time=self.settings.stimuli["Message"]["warning_duration"], msg_type="warning")
 
     def turn_off(self):
@@ -756,6 +761,8 @@ class PsychoPhysicsExperiment:
             stim.color = utils.str2tuple(params["normal_text_color"])
         elif msg_type in ["warning", "error"]:
             stim.color = utils.str2tuple(params["warning_text_color"])
+        elif msg_type == "good_news":
+            stim.color = utils.str2tuple(params["good_news_text_color"])
 
         # Show the message
         stim.draw()
@@ -819,6 +826,7 @@ class PsychoPhysicsExperiment:
             self.logger.critical(self.codex.message("exp", "term"))
             try:
                 # Save as much as you can
+                self.data.save_participants(self.files.participants)
                 self.data.save_stimuli(self.files.stim_data)
                 self.data.save_behavior(self.file.behavior)
                 self.data.save_frames(self.files.frames)

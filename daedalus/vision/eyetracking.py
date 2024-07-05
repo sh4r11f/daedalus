@@ -280,7 +280,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.go_offline()
         self.tracker.reset()
 
-    def stop_trial(self):
+    def stop_trial(self, trial):
         """
         Stop a trial midway.
         """
@@ -290,7 +290,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.tracker.end_realtime()
         self.tracker.go_offline()
         self.tracker.reset()
-        super().stop_trial()
+        super().stop_trial(trial)
 
     def wrap_block(self, block):
         """
@@ -1115,6 +1115,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.logger.critical(raise_error)
             # Save as much as you can
             try:
+                self.data.save_participants(self.files.participants)
                 self.data.save_stimuli(self.files.stim_data)
                 self.data.save_behavior(self.file.behavior)
                 self.data.save_frames(self.files.frames)

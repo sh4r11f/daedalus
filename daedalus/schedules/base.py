@@ -22,8 +22,6 @@ from pathlib import Path
 
 import numpy as np
 
-from daedalus import utils
-
 
 class RewardSchedule:
     """

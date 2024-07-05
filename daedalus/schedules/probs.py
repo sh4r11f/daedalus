@@ -77,8 +77,8 @@ class GeneralSchedule(RewardSchedule):
         Returns:
             dict: reward probabilities (prob_left, prob_right, prob_down, prob_up)
         """
-        rew_left = self.general_curve(
-            choice_prob, 
+        rew_left = self.dick_curve(
+            choice_prob,
             self.params["A"],
             self.params["K"],
             self.params["B"],
@@ -87,8 +87,8 @@ class GeneralSchedule(RewardSchedule):
             self.params["C"],
             self.params["M"]
         )
-        rew_right = self.general_curve(
-            choice_prob, 
+        rew_right = self.dick_curve(
+            choice_prob,
             self.params["A"],
             self.params["K"],
             -1 * self.params["B"],

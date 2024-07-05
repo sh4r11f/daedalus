@@ -41,9 +41,9 @@ class DataManager:
         self.codex = Codex()
 
         # IDs
-        self.sub_id = None
-        self.ses_id = None
-        self.task_id = None
+        self._sub_id = None
+        self._ses_id = None
+        self._task_id = None
 
         # Data
         self.participants = None
@@ -53,6 +53,30 @@ class DataManager:
         self.frames = None
         self.eye_events = None
         self.eye_samples = None
+
+    @property
+    def sub_id(self):
+        return self._sub_id
+
+    @sub_id.setter
+    def sub_id(self, value):
+        self._sub_id = int(value)
+
+    @property
+    def ses_id(self):
+        return self._ses_id
+
+    @ses_id.setter
+    def ses_id(self, value):
+        self._ses_id = int(value)
+
+    @property
+    def task_id(self):
+        return self._task_id
+
+    @task_id.setter
+    def task_id(self, value):
+        self._task_id = value
 
     def init_participants(self):
         """
@@ -88,16 +112,13 @@ class DataManager:
             sub_df = sub_info
 
         pids = self.participants["PID"].values.astype(int)
-        self.sub_id = int(sub_df["PID"].values[0])
-        self.ses_id = int(sub_df["Session"].values[0])
-        self.task_id = sub_df["Task"].values[0]
-        if self.sub_id not in pids:
+        if self._sub_id not in pids:
             self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
         else:
             duplicate = self.participants.loc[
-                (self.participants["PID"] == self.sub_id) &
-                (self.participants["Session"] == self.ses_id) &
-                (self.participants["Task"] == self.task_id)
+                (self.participants["PID"] == self._sub_id) &
+                (self.participants["Session"] == self._ses_id) &
+                (self.participants["Task"] == self._task_id)
             ]
             if duplicate.shape[0] == 0:
                 self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
@@ -112,9 +133,9 @@ class DataManager:
             sub_info (dict): The subject information.
         """
         self.participants.loc[
-            (self.participants["PID"] == int(self.sub_id)) &
-            (self.participants["Session"] == int(self.ses_id)) &
-            (self.participants["Task"] == self.task_id), col] = value
+            (self.participants["PID"] == int(self._sub_id)) &
+            (self.participants["Session"] == int(self._ses_id)) &
+            (self.participants["Task"] == self._task_id), col] = value
 
     def save_participants(self, file_path):
         """

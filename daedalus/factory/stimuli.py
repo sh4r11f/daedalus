@@ -452,9 +452,9 @@ class StimulusFactory:
         stim = visual.Rect(
             self.window,
             name=name,
-            width=w,
-            height=height,
+            size=(w, height),
             pos=pos,
+            lineWidth=rewbar_params["line_width"],
             fillColor=str2tuple(rewbar_params["fill_color"]),
             lineColor=str2tuple(rewbar_params["line_color"]),
             autoLog=False
@@ -482,17 +482,15 @@ class StimulusFactory:
         else:
             win_w = pix2deg(win_w, self.monitor)
             win_h = pix2deg(win_h, self.monitor)
-        width = win_w / params["max_reward"]
-        position = (-win_w / 2 + width / 2, -win_h / 2 + height / 2)
+        position = (-win_w / 2, -win_h / 2 + height / 2)
 
         stim = visual.Rect(
             self.window,
             name=name,
-            width=width,
-            height=height,
+            size=(0, height),
             pos=position,
             fillColor=str2tuple(params["fill_color"]),
-            lineColor=str2tuple(params["line_color"]),
+            lineWidth=0,
             autoLog=False
         )
         setattr(self, name, stim)
@@ -516,6 +514,7 @@ class StimulusFactory:
         size = params["size"]
         if self.window.units == "pix":
             size = deg2pix(size, self.monitor)
+        size = size * params["scale"]
 
         # Create the feedback image stimulus
         feedback_img = visual.ImageStim(
@@ -528,7 +527,7 @@ class StimulusFactory:
         setattr(self, name, feedback_img)
         return feedback_img
 
-    def make_reward_text(self, name, text=None):
+    def make_reward_text(self, name):
         """
         Creates a feedback text stimulus.
 
@@ -539,14 +538,11 @@ class StimulusFactory:
             visual.TextStim: The feedback text stimulus.
         """
         params = self.params["Reward"]["Text"]
-        if text is None:
-            text = params.get(["text"])
         stim = visual.TextStim(
             self.window,
             name=name,
-            text=text,
             font=params["font"],
-            fontFiles=self.font_flles,
+            fontFiles=self.font_files,
             height=params["font_size"],
             color=str2tuple(params["color"]),
             autoLog=False
