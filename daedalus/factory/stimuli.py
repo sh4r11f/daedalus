@@ -348,6 +348,35 @@ class StimulusFactory:
         )
         setattr(self, name, dd)
         return dd
+    
+    def make_aperture(self, name):
+        """
+        Creates a hard aperture stimulus.
+
+        Args:
+            name (str): The name of the stimulus.
+
+        Returns:
+            visual.GratingStim: The hard aperture stimulus.
+        """
+        params = self.params["Aperture"]
+        gabor_params = self.params["SingleDrift"]
+        radius = params["radius_scale"] * gabor_params["size"]
+        lw = params["line_width"]
+        if self.window.units == "pix":
+            radius = deg2pix(radius, self.monitor)
+            lw = deg2pix(params["line_width"], self.monitor)
+
+        stim = visual.Circle(
+            self.window,
+            name=name,
+            radius=radius,
+            contrast=params["contrast"],
+            lineWidth=lw,
+            autoLog=False
+        )
+        setattr(self, name, stim)
+        return stim
 
     def make_cue_fixation(self, name):
         """
