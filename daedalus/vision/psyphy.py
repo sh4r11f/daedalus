@@ -148,6 +148,7 @@ class PsychoPhysicsExperiment:
         self.logger = log_handler.DaedalusLogger(self.name, self.debug, self.files.log)
 
         # Make visuals
+        # self.display.start(1)
         self.display.start(self.debug)
         self.stimuli.set_display(self.display.monitor, self.display.window)
         self.stimuli.make_message("exp_msg")

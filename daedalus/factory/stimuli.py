@@ -760,7 +760,7 @@ class DisplayFactory:
             monitor=monitor,
             fullscr=False,
             units=self.win_params["units"],
-            size=[1200, 800],
+            size=self.mon_params["size_pix"],
             allowGUI=True,
             waitBlanking=True,
             color=self.win_params["background_color"],  # default to mid-grey

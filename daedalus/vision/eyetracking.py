@@ -200,10 +200,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             else:
                 recalib = self.handle_drift_error(drift_status)
 
-        # Reset the trial status
-        if trial.repeat:
-            trial.repeated()
-
         return recalib
 
     def handle_drift_error(self, error):
@@ -579,7 +575,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             self.display.show(fix)
 
             # Check eye events
-            events = self.tracker.process_events_online(fix_event)
+            events, _ = self.tracker.process_events_online(fix_event)
             if events == self.codex.message("con", "lost"):
                 self.trial_error(events)
                 return msg
@@ -620,7 +616,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         # Get events
         fix_events = {"fixation_update": pylink.FIXUPDATE, "fixation_end": pylink.ENDFIX}
-        events = self.tracker.process_events_online(fix_events)
+        events, _ = self.tracker.process_events_online(fix_events)
         # Check if there was an error
         if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.trial_error(events)
@@ -651,7 +647,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
 
         return status, events
 
-    def find_saccade(self, target_positions, fix_pos=None, fix_method="circle"):
+    def find_saccade(self, target_positions, fix_pos=None, fix_method="circle", get_samples=False):
         """
         Look for saccade.
 
@@ -677,7 +673,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "saccade_start": pylink.STARTSACC,
             "saccade_end": pylink.ENDSACC
         }
-        events = self.tracker.process_events_online(mon_events)
+        events, samples = self.tracker.process_events_online(mon_events, process_samples=get_samples)
         # Check if there was an error
         if events in [self.codex.message("con", "lost"), self.codex.message("con", "term")]:
             self.trial_error(events)
@@ -731,7 +727,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             status = self.codex.message("sacc", "null")
 
-        return status, events
+        # Samples are returned if requested
+        return status, events, samples
 
     def get_sacc_landing(self, events):
         """
@@ -759,6 +756,35 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             pd.DataFrame: The DataFrame of the events.
         """
         df = pd.DataFrame(events)
+        return df
+
+    def parse_eye_samples(self, samples, trial):
+        """
+        Parse the samples.
+
+        Args:
+            samples (list): The list of samples.
+
+        Returns:
+            pd.DataFrame: The parsed samples.
+        """
+        indices = [utils.time_index(sample["time"], trial.cue_tracker_times) for sample in samples]
+        trial_frames = [trial.cue_frames[idx] for idx in indices]
+        trial_times = [trial.cue_times[frame] for frame in trial_frames]
+        df = pd.DataFrame({
+            "SampleTime_Tracker_ms": [sample["time"] for sample in samples],
+            "SampleTime_Trial_ms": trial_times,
+            "SampleTime_FrameN": trial_frames,
+            "SampleGazeX_px": [sample["gaze_x"] for sample in samples],
+            "SampleGazeY_px": [sample["gaze_y"] for sample in samples],
+            "SampleGazeX_dva": [pix2deg(sample["gaze_x"], self.display.monitor) for sample in samples],
+            "SampleGazeY_dva": [pix2deg(sample["gaze_y"], self.display.monitor) for sample in samples],
+            "SampleGazeX_ppd": [sample["ppd_x"] for sample in samples],
+            "SampleGazeY_ppd": [sample["ppd_y"] for sample in samples],
+            "SampleGazeX_Tracker_dva": [sample["gaze_x"] / sample["ppd_x"] for sample in samples],
+            "SampleGazeY_Tracker_dva": [sample["gaze_y"] / sample["ppd_y"] for sample in samples],
+            "SamplePupilSize": [sample["pupil_size"] for sample in samples]
+        })
         return df
 
     def parse_fixation_update_event(self, event, trial):

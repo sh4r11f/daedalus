@@ -243,6 +243,17 @@ class DataManager:
         self.eye_events = None
         self.eye_samples = None
 
+    def not_empty(self, df):
+        """
+        Check if the dataframe is empty.
+
+        Args:
+            df (dataframe): The dataframe to check.
+        """
+        if (not df.empty) and (not df.isna().all().all()):
+            return True
+        return False
+
     def collect_trial(self, df, data_type):
         """
         Collect the trial data.
@@ -251,33 +262,36 @@ class DataManager:
             df (dataframe): The trial data to collect.
             data_type (str): The type of data to collect.
         """
-        if data_type == "behavior":
-            if not self.behavior.empty and not self.behavior.isna().all().all():
-                self.behavior = pd.concat([self.behavior, df], ignore_index=True)
+        if self.not_empty(df):
+            if data_type == "behavior":
+                if not self.behavior.empty and not self.behavior.isna().all().all():
+                    self.behavior = pd.concat([self.behavior, df], ignore_index=True)
+                else:
+                    self.behavior = df
+            elif data_type == "stimuli":
+                if not self.stimuli.empty and not self.stimuli.isna().all().all():
+                    self.stimuli = pd.concat([self.stimuli, df], ignore_index=True)
+                else:
+                    self.stimuli = df
+            elif data_type == "frames":
+                if not self.frames.empty and not self.frames.isna().all().all():
+                    self.frames = pd.concat([self.frames, df], ignore_index=True)
+                else:
+                    self.frames = df
+            elif data_type == "eye_events":
+                if not self.eye_events.empty and not self.eye_events.isna().all().all():
+                    self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
+                else:
+                    self.eye_events = df
+            elif data_type == "eye_samples":
+                if not self.eye_samples.empty and not self.eye_samples.isna().all().all():
+                    self.eye_samples = pd.concat([self.eye_samples, df], ignore_index=True)
+                else:
+                    self.eye_samples = df
             else:
-                self.behavior = df
-        elif data_type == "stimuli":
-            if not self.stimuli.empty and not self.stimuli.isna().all().all():
-                self.stimuli = pd.concat([self.stimuli, df], ignore_index=True)
-            else:
-                self.stimuli = df
-        elif data_type == "frames":
-            if not self.frames.empty and not self.frames.isna().all().all():
-                self.frames = pd.concat([self.frames, df], ignore_index=True)
-            else:
-                self.frames = df
-        elif data_type == "eye_events":
-            if not self.eye_events.empty and not self.eye_events.isna().all().all():
-                self.eye_events = pd.concat([self.eye_events, df], ignore_index=True)
-            else:
-                self.eye_events = df
-        elif data_type == "eye_samples":
-            if not self.eye_samples.empty and not self.eye_samples.isna().all().all():
-                self.eye_samples = pd.concat([self.eye_samples, df], ignore_index=True)
-            else:
-                self.eye_samples = df
+                raise ValueError(f"Data type {data_type} not recognized.")
         else:
-            raise ValueError(f"Data type {data_type} not recognized.")
+            return self.codex.message("data", "null")
 
     def save_stimuli(self, file_path):
         """

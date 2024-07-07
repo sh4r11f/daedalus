@@ -443,13 +443,12 @@ class MyeLink:
 
         return info
 
-    def process_sample(self, sample, event_type):
+    def process_sample(self, sample):
         """
         Process the fixation start event
 
         Args:
             sample (pylink.Sample): The sample data.
-            event_type (int): The event type.
 
         Returns:
             dict: The processed sample data.
@@ -465,7 +464,6 @@ class MyeLink:
             pupil_size = eye_data.getPupilSize()
 
         return {
-            "event_type": event_type,
             "time": time,
             "gaze_x": gaze_x,
             "gaze_y": gaze_y,
@@ -530,26 +528,15 @@ class MyeLink:
                         # Detect/process the event data
                         events.append(func(ev_data))
 
-                    # Process the sample data for this event
+                # Process the sample
+                elif item_type == pylink.SAMPLE_TYPE:
                     if process_samples:
-                        while True:
-                            # break if no more samples
-                            sample = self.eyelink.getNextData()
-                            if not sample:
-                                break
-                            # break if found next event
-                            if sample is not None:
-                                if sample != pylink.SAMPLE_TYPE:
-                                    break
-                            if sample == pylink.SAMPLE_TYPE:
-                                sam_data = self.eyelink.getFloatData()
-                                if prev_sample is None or sam_data.getTime() != prev_sample.getTime():
-                                    prev_sample = sam_data
-                                    samples.append(self.process_sample(sam_data, item_type))
-        if process_samples:
-            return events, samples
-        else:
-            return events
+                        sam_data = self.eyelink.getFloatData()
+                        if prev_sample is None or sam_data.getTime() != prev_sample.getTime():
+                            prev_sample = sam_data
+                            samples.append(self.process_sample(sam_data))
+
+        return events, samples
 
     def detect_fixation_start_event(self, data):
         """
