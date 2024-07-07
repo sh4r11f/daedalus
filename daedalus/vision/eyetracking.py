@@ -93,7 +93,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         else:
             # practice block
             if block.name == "practice":
-                block.needs_calib = False
+                block.needs_calib = True
                 msg = "You are about to begin a practice block."
             else:
                 msg = f"You are about to begin block {self.block_id}/{self.task.n_blocks:02d}"
@@ -223,6 +223,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         if resp == "space":
             msg = self.tracker.codex_msg("trial", "rep")
             self.trial_warning(msg)
+            self.tracker.go_offline()
             recalib = self.prepare_trial()
         else:
             recalib = False
@@ -345,49 +346,61 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
     def run_calibration(self, msg=None):
         """
         Run the calibration for the eyetracker.
-
-        Args:
-            msg (str): The message to show before calibration.
-
-        Returns:
-            str: The status of the calibration.
         """
-        # Message
-        if msg is None:
-            txt = []
-        else:
-            txt = [msg]
+        txt = [msg] if msg is not None else []
         txt.append("In the next screen, press C to calibrate the eyetracker.")
         txt.append("After calibration press Enter to accept the new calibration and then O to resume the experiment.")
         txt.append("Press Space to continue.")
-        resp = self.show_msg("\n\n".join(txt))
+        self.show_msg("\n\n".join(txt))
+        self.tracker.eyelink.doTrackerSetup()
+        return self.codex.message("calib", "ok")
 
-        # Run calibration
-        self.tracker.send_cmd("record_status_message 'In calibration'")
-        if resp == "escape":
-            status = self.tracker.codex_msg("calib", "term")
-            self.logger.warning(status)
-        elif resp == "space":
-            self.logger.info(self.codex.message("calib", "init"))
-            # Take the tracker offline
-            self.tracker.go_offline()
-            # Start calibration
-            if self.simulation:
-                res = self.codex.message("calib", "ok")
-            else:
-                res = self.tracker.calibrate()
-            if res == self.codex.message("calib", "ok"):
-                # txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
-                # resp = self.show_msg(txt)
-                # if resp == "return":
-                #     self.genv.exit_cal_display()
-                #     self.tracker.send_cmd("record_status_message 'Calibration done.'")
-                self.logger.info(res)
-            else:
-                self.logger.error(res)
-            status = res
+    # def run_calibration(self, msg=None):
+    #     """
+    #     Run the calibration for the eyetracker.
 
-        return status
+    #     Args:
+    #         msg (str): The message to show before calibration.
+
+    #     Returns:
+    #         str: The status of the calibration.
+    #     """
+    #     # Message
+    #     if msg is None:
+    #         txt = []
+    #     else:
+    #         txt = [msg]
+    #     txt.append("In the next screen, press C to calibrate the eyetracker.")
+    #     txt.append("After calibration press Enter to accept the new calibration and then O to resume the experiment.")
+    #     txt.append("Press Space to continue.")
+    #     resp = self.show_msg("\n\n".join(txt))
+
+    #     # Run calibration
+    #     self.tracker.send_cmd("record_status_message 'In calibration'")
+    #     if resp == "escape":
+    #         status = self.tracker.codex_msg("calib", "term")
+    #         self.logger.warning(status)
+    #     elif resp == "space":
+    #         self.logger.info(self.codex.message("calib", "init"))
+    #         # Take the tracker offline
+    #         self.tracker.go_offline()
+    #         # Start calibration
+    #         if self.simulation:
+    #             res = self.codex.message("calib", "ok")
+    #         else:
+    #             res = self.tracker.calibrate()
+    #         if res == self.codex.message("calib", "ok"):
+    #             # txt = "Calibration is done. Press Enter to accept the calibration and resume the experiment."
+    #             # resp = self.show_msg(txt)
+    #             # if resp == "return":
+    #             #     self.genv.exit_cal_display()
+    #             #     self.tracker.send_cmd("record_status_message 'Calibration done.'")
+    #             self.logger.info(res)
+    #         else:
+    #             self.logger.error(res)
+    #         status = res
+
+    #     return status
 
     def tracker_check(self):
         """
@@ -503,7 +516,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         Returns:
             bool: Whether the fixation is within the circle or not.
         """
-        offset = utils.get_hypotenus(gaze, center)
+        offset = utils.get_hypotenuse(gaze, center)
         if offset < radius:
             return True
         else:
@@ -1110,7 +1123,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # Close the eye tracker
             self.tracker.codex_msg("exp", "term")
             self.tracker.eyelink.terminalBreak(1)
-            self.tracker.terminate(self.files.edf_host, self.files.edf_display)
+            self.tracker.terminate(self.files.edf_host, self.files.edf_display, error=True)
             # Log the error
             self.logger.critical(raise_error)
             # Save as much as you can

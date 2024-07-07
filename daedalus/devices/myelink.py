@@ -252,7 +252,7 @@ class MyeLink:
             self.codex_msg("calib", "fail")
             return err
 
-    def terminate(self, host_file, display_file):
+    def terminate(self, host_file, display_file, error=None):
         """
         Close the connection to the Eyelink tracker
 
@@ -273,18 +273,20 @@ class MyeLink:
             if not self.dummy:
                 self.eyelink.closeDataFile()
                 self.delay()
-                # Download the EDF data file from the Host PC to the Display PC
-                try:
-                    self.eyelink.receiveDataFile(str(host_file), str(display_file))
-                    msg = self.codex_msg("file", "ok")
-                except RuntimeError as e:
-                    msg = e
-                    self.codex_msg("file", "fail")
-                    pylink.eyelink.closeGraphics()
+                if not error:
+                    # Download the EDF data file from the Host PC to the Display PC
+                    try:
+                        self.eyelink.receiveDataFile(str(host_file), str(display_file))
+                        msg = self.codex_msg("file", "ok")
+                    except RuntimeError as e:
+                        msg = e
+                        self.codex_msg("file", "fail")
+                        pylink.eyelink.closeGraphics()
+                        self.eyelink.close()
+                else:
+                    msg = error
+                    pylink.closeGraphics()
                     self.eyelink.close()
-
-                pylink.closeGraphics()
-                self.eyelink.close()
 
                 return msg
 

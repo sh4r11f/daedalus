@@ -70,13 +70,13 @@ class PsychoPhysicsExperiment:
         self.platform = platform
         if mode == "debug":
             self.debug = True
+            self.simulation = False
+        elif mode == "simulation":
+            self.debug = True
+            self.simulation = True
         else:
-            if mode == "simulation":
-                self.debug = True
-                self.simulation = True
-            else:
-                self.debug = False
-                self.simulation = False
+            self.debug = False
+            self.simulation = False
 
         # Directories and files
         self.files = FileManager(name, root, version, self.debug)
@@ -276,14 +276,18 @@ class PsychoPhysicsExperiment:
         # Quit
         self.goodbye()
 
-    def block_debug(self, msg):
+    def block_debug(self, *args):
         """
         Log a debug message for the block.
 
         Args:
             msg (str): The message to be logged.
         """
-        self.logger.debug(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
+        if len(args) == 1:
+            self.logger.debug(args[0], extra={"block": self.block_id}, stack_info=True, stacklevel=4)
+        else:
+            msg = " ".join([str(a) for a in args])
+            self.logger.debug(msg, extra={"block": self.block_id}, stack_info=True, stacklevel=4)
 
     def block_info(self, msg):
         """
@@ -625,11 +629,11 @@ class PsychoPhysicsExperiment:
         #         available_tasks = [task for task in ses["tasks"] if task not in burnt_tasks]
         #         for task in available_tasks:
         #             choices.append(f"{ses['id']} ({task})")
-        # dlg.addField(
-        #     key="choice",
-        #     label=emojize(f"{emos['session']} Session (Task)"),
-        #     choices=choices,
-        # )
+        dlg.addField(
+            key="choice",
+            label=emojize(f"{emos['session']} Session (Task)"),
+            choices=choices,
+        )
 
         # Show the dialog
         if self.simulation:
