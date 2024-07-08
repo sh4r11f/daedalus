@@ -167,8 +167,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         self.display.clear()
 
         # Establish fixation
+        recalib = False
         if self.debug:
-            recalib = False
             self.timer.start_trial()
         else:
             # Drift correction
