@@ -186,8 +186,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                     self.tracker.direct_msg(f"TRIALID {self.trial_id}")
                     self.tracker.send_cmd(f"record_status_message 'Block {self.block_id}, Trial {self.trial_id}.'")
                     self.tracker.direct_msg("!V CLEAR 128 128 128")
-                else:
-                    self.handle_not_recording(on_status)
+                # else:
+                #     self.handle_not_recording(on_status)
 
             elif drift_status == self.codex.message("drift", "term"):
                 self.trial_error(drift_status)
@@ -197,8 +197,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                 self.handle_connection_loss(drift_status)
                 recalib = self.prepare_trial(trial)
 
-            else:
-                recalib = self.handle_drift_error(drift_status)
+            # else:
+            #     recalib = self.handle_drift_error(drift_status)
 
         return recalib
 
@@ -688,10 +688,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             # to process the validity of those updates.
             # Fixation end and saccade start are not processed here and are saved for later use
             for event in events:
+
+                # Fixation update
                 if event["event_type"] == "fixation_update":
-                    gaze_x = event["gaze_avg_x"]
-                    gaze_y = event["gaze_avg_y"]
-                    gx, gy = self.mat2cart(gaze_x, gaze_y)
+                    gx, gy = self.mat2cart(event["gaze_avg_x"], event["gaze_avg_y"])
                     if fix_method == "circle":
                         valid = self.gaze_in_circle((gx, gy), fix_pos, fix_radi)
                     else:
@@ -703,10 +703,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                         break
                     else:
                         status = self.codex.message("fix", "ok")
+
+                # Saccade end
                 elif event["event_type"] == "saccade_end":
-                    gaze_x = event["gaze_end_x"]
-                    gaze_y = event["gaze_end_y"]
-                    gx, gy = self.mat2cart(gaze_x, gaze_y)
+                    gx, gy = self.mat2cart(event["gaze_end_x"], event["gaze_end_y"])
                     # check if close to target(s)
                     landings = []
                     for tp in target_positions:
@@ -722,6 +722,8 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
                         self.trial_error(status)
                         self.tracker.direct_msg(status, delay=False)
                     break
+
+                # Saccade start
                 else:
                     status = self.codex.message("sacc", "init")
         else:
@@ -770,7 +772,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         indices = [utils.time_index(sample["time"], trial.cue_tracker_times) for sample in samples]
         trial_frames = [trial.cue_frames[idx] for idx in indices]
-        trial_times = [trial.cue_times[frame] for frame in trial_frames]
+        trial_times = [trial.cue_times[idx] for idx in indices]
         df = pd.DataFrame({
             "SampleTime_Tracker_ms": [sample["time"] for sample in samples],
             "SampleTime_Trial_ms": trial_times,
@@ -811,10 +813,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventType": ["FixationUpdate"],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.cue_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.cue_times[start_idx]],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.cue_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.cue_times[end_idx]],
             "EventDuration_ms": [duration],
             "GazeAvgX_px": [gaze_avg_x],
             "GazeAvgY_px": [gaze_avg_y],
@@ -857,7 +859,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventDuration_ms": [end - start],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.cue_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.cue_times[start_idx]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -868,7 +870,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.cue_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.cue_times[end_idx]],
             "GazeEndX_px": [gaze_end_x],
             "GazeEndY_px": [gaze_end_y],
             "GazeEndX_ppd": [ppd_end_x],
@@ -913,7 +915,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventType": ["SaccadeStart"],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.cue_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.cue_times[start_idx]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -959,7 +961,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "EventDuration_ms": [end - start],
             "EventStart_FrameN": [start_frame],
             "EventStart_TrackerTime_ms": [start],
-            "EventStart_TrialTime_ms": [trial.cue_times[start_frame]],
+            "EventStart_TrialTime_ms": [trial.cue_times[start_idx]],
             "GazeStartX_px": [gaze_start_x],
             "GazeStartY_px": [gaze_start_y],
             "GazeStartX_ppd": [ppd_start_x],
@@ -970,7 +972,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
             "GazeStartY_Tracker_dva": [gaze_start_y / ppd_start_y],
             "EventEnd_FrameN": [end_frame],
             "EventEnd_TrackerTime_ms": [end],
-            "EventEnd_TrialTime_ms": [trial.cue_times[end_frame]],
+            "EventEnd_TrialTime_ms": [trial.cue_times[end_idx]],
             "GazeEndX_px": [gaze_end_x],
             "GazeEndY_px": [gaze_end_y],
             "GazeEndX_ppd": [ppd_end_x],
@@ -996,7 +998,6 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         })
 
         return df
-
 
     def add_to_events_dataframe(self, data: dict, tracker_lag: float):
         """

@@ -348,7 +348,7 @@ class StimulusFactory:
         )
         setattr(self, name, dd)
         return dd
-    
+
     def make_aperture(self, name):
         """
         Creates a hard aperture stimulus.
@@ -365,7 +365,7 @@ class StimulusFactory:
         lw = params["line_width"]
         if self.window.units == "pix":
             radius = deg2pix(radius, self.monitor)
-            lw = deg2pix(params["line_width"], self.monitor)
+            lw = deg2pix(lw, self.monitor)
 
         stim = visual.Circle(
             self.window,
@@ -373,6 +373,8 @@ class StimulusFactory:
             radius=radius,
             contrast=params["contrast"],
             lineWidth=lw,
+            lineColor=str2tuple(params["line_color"]),
+            fillColor=str2tuple(params["fill_color"]),
             autoLog=False
         )
         setattr(self, name, stim)

@@ -94,10 +94,10 @@ def get_hypotenuse(point_a, point_b):
     Returns:
         float: The Euclidean distance between the two points.
     """
-    ax, ay = np.fabs(point_a)
-    bx, by = np.fabs(point_b)
+    ax, ay = point_a
+    bx, by = point_b
 
-    return np.hypot((ax - bx), (ay - by))
+    return np.hypot(np.fabs(ax - bx), np.fabs(ay - by))
 
 
 def get_caller():
@@ -169,7 +169,7 @@ def time_index(time_point, frame_times):
     """
     Find the frame number for a given time.
 
-            Args:
+    Args:
         time_point (float): The time point to find the frame number for.
         frame_times (array): The frame times.
 

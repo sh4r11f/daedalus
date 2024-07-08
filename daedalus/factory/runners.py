@@ -19,6 +19,7 @@
 #
 # ======================================================================================== #
 import random
+import numpy as np
 
 
 class TaskFactory:
@@ -104,9 +105,11 @@ class BlockFactory:
 
         self.trials = []
 
-        self.errors = None
+        self.duration = 0
+        self.error = None
         self.repeat = False
         self.needs_calib = False
+
         self.failed = 0
         self.index = 0
 
@@ -149,18 +152,23 @@ class BlockFactory:
             trial.idx = idx
             trial.id = idx + 1
 
-    def repeated(self):
+    def recycle(self):
         """
         Determine if the block will repeat.
         """
         self.failed += 1
-        self.error = None
-        self.repeat = False
-        self.needs_calib = False
-        self.index = 0
 
         for trial in self.trials:
             trial.reset()
+
+        self.needs_calib = True
+
+        self.duration = 0
+        self.error = None
+        self.repeat = False
+
+        self.failed = 0
+        self.index = 0
 
     def __iter__(self):
         return self
@@ -184,8 +192,22 @@ class TrialFactory:
         self.idx = trial_idx
         self.id = trial_idx + 1
         self.name = kwargs.get("name", None)
+
         self._frames = []
+        self.fix_frames = []
+        self.view_frames = []
+        self.cue_frames = []
+        self.resp_frames = []
+        self.feedback_frames = []
+        self.mask_frames = []
         self.break_frame = -1
+
+        self.fix_times = []
+        self.view_times = []
+        self.cue_times = []
+        self.resp_times = []
+        self.feedback_times = []
+        self.mask_times = []
 
         self.eye_events = []
         self.eye_samples = []
@@ -194,13 +216,12 @@ class TrialFactory:
         self.duration = 0
         self.drift_correction = 0
         self.repeat = False
-        self.failed = 0
         self.key_press = None
         self.response = None
+        self.saccade = None
         self.error = None
-        self.fake_response = None
-        self.fake_response_onset = -1
 
+        self.failed = 0
         self.index = 0
 
         # Set and overwrite the attributes that are provided
@@ -219,35 +240,38 @@ class TrialFactory:
     def frames(self, frames):
         self._frames = frames
 
-    def repeated(self):
+    def recycle(self):
         """
         Reset for a repeated trial.
         """
         self.failed += 1
+        self.index = 0
+
+        self.fix_times = np.zeros(len(self.fix_frames))
+        self.view_times = np.zeros(len(self.view_times))
+        self.cue_times = np.zeros(len(self.cue_times))
+        self.resp_times = np.zeros(len(self.resp_times))
+        self.feedback_times = np.zeros(len(self.feedback_times))
+        self.mask_times = np.zeros(len(self.mask_times))
+
+        self.eye_events = []
+        self.eye_samples = []
+        self.frame_intervals = []
 
         self.duration = 0
-        self.frame_intervals = []
         self.drift_correction = 0
         self.repeat = False
         self.key_press = None
         self.response = None
+        self.saccade = None
         self.error = None
 
     def reset(self):
         """
         Reset for a block.
         """
+        self.recycle()
         self.failed = 0
-
-        self.duration = 0
-        self.frame_intervals = []
-        self.drift_correction = 0
-        self.repeat = False
-        self.key_press = None
-        self.response = None
-        self.error = None
-
-        self.index = 0
 
     def s2ms(self, var_name):
         # Get the value

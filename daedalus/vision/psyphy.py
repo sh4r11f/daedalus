@@ -815,7 +815,7 @@ class PsychoPhysicsExperiment:
         if key_press == "ctrl+c":
             self.goodbye(self.codex.message("usr", "term"))
         else:
-            self.display.clear()
+            # self.display.clear()
             return key_press
 
     def goodbye(self, raise_error=None):
