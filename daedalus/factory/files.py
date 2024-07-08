@@ -124,7 +124,7 @@ class FileManager:
         eye_sample_file = self.dirs.ses / fname
         errors.append(self._exist_rename(eye_sample_file))
         
-        fname = pre_name + "_EDFDisplay.csv"
+        fname = pre_name + "_raw.edf"
         edf_display_file = self.dirs.ses / fname
         errors.append(self._exist_rename(edf_display_file))
 

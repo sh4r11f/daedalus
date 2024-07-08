@@ -164,6 +164,7 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         """
         self.trial_id = self._fix_id(trial.id)
         self.tracker.eyelink.terminalBreak(0)
+        self.display.clear()
 
         # Establish fixation
         if self.debug:

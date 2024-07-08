@@ -43,7 +43,7 @@ class DataManager:
         # IDs
         self._sub_id = None
         self._ses_id = None
-        self._task_id = None
+        self._task_name = None
 
         # Data
         self.participants = None
@@ -71,12 +71,12 @@ class DataManager:
         self._ses_id = int(value)
 
     @property
-    def task_id(self):
-        return self._task_id
+    def task_name(self):
+        return self._task_name
 
-    @task_id.setter
-    def task_id(self, value):
-        self._task_id = value
+    @task_name.setter
+    def task_name(self, value):
+        self._task_name = value
 
     def init_participants(self):
         """
@@ -98,6 +98,9 @@ class DataManager:
         else:
             self.init_participants()
 
+        self.participants["PID"] = self.participants["PID"].astype(int)
+        self.participants["Session"] = self.participants["Session"].astype(int)
+
     def add_participant(self, sub_info):
         """
         Saves the subject info to the participants file.
@@ -112,13 +115,15 @@ class DataManager:
             sub_df = sub_info
 
         pids = self.participants["PID"].values.astype(int)
+        sub_info["PID"] = sub_info["PID"].astype(int)
+        sub_info["Session"] = sub_info["Session"].astype(int)
         if self._sub_id not in pids:
             self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
         else:
             duplicate = self.participants.loc[
                 (self.participants["PID"] == self._sub_id) &
                 (self.participants["Session"] == self._ses_id) &
-                (self.participants["Task"] == self._task_id)
+                (self.participants["Task"] == self._task_name)
             ]
             if duplicate.shape[0] == 0:
                 self.participants = pd.concat([self.participants, sub_df], ignore_index=False)
@@ -133,9 +138,9 @@ class DataManager:
             sub_info (dict): The subject information.
         """
         self.participants.loc[
-            (self.participants["PID"] == int(self._sub_id)) &
-            (self.participants["Session"] == int(self._ses_id)) &
-            (self.participants["Task"] == self._task_id), col] = value
+            (self.participants["PID"] == self._sub_id) &
+            (self.participants["Session"] == self._ses_id) &
+            (self.participants["Task"] == self._task_name), col] = value
 
     def save_participants(self, file_path):
         """

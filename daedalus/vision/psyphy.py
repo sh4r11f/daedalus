@@ -210,6 +210,7 @@ class PsychoPhysicsExperiment:
         self.timer.start_trial()
         self.trial_info(self.codex.message("trial", "init"))
         self.trial_info(f"TRIALID_{self.trial_id}")
+        self.display.clear()
 
     def wrap_trial(self):
         """
@@ -632,7 +633,7 @@ class PsychoPhysicsExperiment:
         #             choices.append(f"{ses['id']} ({task})")
         dlg.addField(
             key="choice",
-            label=emojize(f"{emos['session']} Session (Task)"),
+            label=emojize(f"{emos['session']} Session"),
             choices=choices,
         )
 
@@ -815,7 +816,7 @@ class PsychoPhysicsExperiment:
         if key_press == "ctrl+c":
             self.goodbye(self.codex.message("usr", "term"))
         else:
-            # self.display.clear()
+            win.flip()
             return key_press
 
     def goodbye(self, raise_error=None):
