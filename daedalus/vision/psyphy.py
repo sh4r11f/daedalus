@@ -612,28 +612,13 @@ class PsychoPhysicsExperiment:
                     )
 
         # Add sessions and tasks that are available
-        tasks = list(self.settings.exp["Tasks"].keys())
-        done = sub_df.loc[~(pd.isnull(sub_df["Completed"])), ["Session", "Task"]]
-        remaining = [task for task in tasks if task not in done["Task"].values]
-        if self.task_name not in remaining:
-            dlg.addFixedField(key="error", label="ERROR!", initial="This task is not available for this participant.")
-        else:
-            choices = []
-            for ses in self.settings.exp["Sessions"]:
-                if ses["id"] not in done["Session"].values:
-                    choices.append(f"{ses['id']}")
-        # for ses in self.settings.exp["Sessions"]:
-        #     if ses["id"] not in complete["Session"].values:
-        #         for task in ses["tasks"]:
-        #             choices.append(f"{ses['id']} ({task})")
-        #     else:
-        #         burnt_tasks = complete.loc[complete["Session"] == ses["id"], "Task"].values
-        #         available_tasks = [task for task in ses["tasks"] if task not in burnt_tasks]
-        #         for task in available_tasks:
-        #             choices.append(f"{ses['id']} ({task})")
+        choices = []
+        for ses in self.settings.exp["Sessions"]:
+            if self.task_name in ses["tasks"]:
+                choices.append(f"{ses['id']}")
         dlg.addField(
             key="choice",
-            label=emojize(f"{emos['session']} Session"),
+            label=emojize(f"{emos['session']} {self.task_name} session"),
             choices=choices,
         )
 
