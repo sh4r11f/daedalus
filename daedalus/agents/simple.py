@@ -38,7 +38,7 @@ class SimpleQ(BaseRL):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(n_actions=2, n_states=1, **kwargs)
+        super().__init__(n_actions=2, **kwargs)
 
         # Initialize the Q-table with number of states and actions
         self._Q = np.zeros(self.n_actions)
@@ -64,10 +64,7 @@ class SimpleQ(BaseRL):
             reward (float): reward received from the environment
         """
         # Chosen action
-        if reward:
-            self._Q[choice] = self._Q[choice] + self._alpha_rew * (reward - self._Q[choice])
-        else:
-            self._Q[choice] = self._Q[choice] + self._alpha_unr * (reward - self._Q[choice])
+        self._Q[choice] = self._Q[choice] + self._alpha_rew * (reward - self._Q[choice])
 
         # Update unchosen action
         self._Q[1 - choice] = self._Q[1 - choice] - self._decay * self._Q[1 - choice]
