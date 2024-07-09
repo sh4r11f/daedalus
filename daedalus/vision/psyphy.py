@@ -1043,3 +1043,9 @@ class PsychoPhysicsExperiment:
 
     def ms_round(self, times):
         return np.round(times * 1000, self.settings.exp["General"]["round_decimal"])
+
+    def dva2px(self, deg):
+        return deg2pix(deg, self.display.monitor)
+
+    def px2dva(self, pix):
+        return pix2deg(pix, self.display.monitor)
