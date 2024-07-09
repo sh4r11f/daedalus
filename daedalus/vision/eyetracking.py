@@ -349,7 +349,10 @@ class EyetrackingExperiment(PsychoPhysicsExperiment):
         txt.append("After calibration press Enter to accept the new calibration and then O to resume the experiment.")
         txt.append("Press Space to continue.")
         self.show_msg("\n\n".join(txt))
-        self.tracker.eyelink.doTrackerSetup()
+        if not self.simulation:
+            self.tracker.go_offline()
+            self.tracker.eyelink.doTrackerSetup()
+
         return self.codex.message("calib", "ok")
 
     # def run_calibration(self, msg=None):
