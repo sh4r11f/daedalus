@@ -14,8 +14,6 @@ from .simple import SimpleQ
 
 class FeatureAction(SimpleQ):
     """
-    A Q-learning agent for discrete state and action spaces with a softmax action selection policy and hybrid
-    feature + action update rule.
     """
     def __init__(
         self,

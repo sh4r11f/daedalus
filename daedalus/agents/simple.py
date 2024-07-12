@@ -27,8 +27,8 @@ from .base import BaseRL
 
 class SimpleQ(BaseRL):
     """
-    A simple Q-learning agent for discrete state and action spaces with a softmax action selection policy and
-    update rule based on action/feature choice.
+    A simple agent for discrete state and action spaces with a sigmoid action selection and
+    RW learning rule.
 
     Args:
         alpha: learning rate
@@ -36,14 +36,11 @@ class SimpleQ(BaseRL):
         bias: bias
 
     """
-    def __init__(self, name, root, version, alpha=0.5, decay=0.9, beta=1, bias=0, **kwargs):
+    def __init__(self, name, alpha=0.5, decay=0.9, beta=1, bias=0.1, **kwargs):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(name, root, version, n_actions=2, n_states=1, **kwargs)
-
-        # Initialize the Q-table with number of states and actions
-        self._Q = np.zeros(self.n_actions)
+        super().__init__(name, n_actions=2, n_states=1, **kwargs)
 
         # Initialize the learning rate for reward and unrewarded actions
         self._n_params = 3
@@ -201,49 +198,3 @@ class SimpleQ(BaseRL):
     @beta.setter
     def beta(self, value):
         self._beta = value
-
-
-class MultiChoiceQ(BaseRL):
-    """
-    Simple Q learning agent that can make multiple choices at once in a binary choice task.
-
-    Args:
-        alpha_rew (float): learning rate for rewarded actions
-        alpha_unr (float): learning rate for unrewarded actions
-        beta (float): beta parameter for softmax function
-        bias (float): bias parameter for softmax function
-        decay (float): decay parameter for unchosen action
-    """
-    def __init__(self, name, root, n_actions, n_states, **kwargs):
-        super().__init__(name, root, n_actions, n_states, **kwargs)
-
-        # Initialize the Q-table with number of states and actions
-        self._Q = np.zeros(self.n_actions)
-
-        # Initialize the learning rate for reward and unrewarded actions
-        self._n_params = 5
-        self._alpha_rew = 0
-        self._alpha_unr = 0
-        self._beta = 0
-        self._bias = 0
-        self._decay = 0
-
-    def reset(self):
-        self._Q = np.zeros(self.n_actions) + np.random.rand(self.n_actions)
-
-    def update(self, choice, reward):
-        """
-        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
-        next state.
-
-        Args:
-            choice (int): action chosen by the agent
-            reward (int): reward received from the environment
-        """
-        # Chosen action
-        if reward:
-            self._Q[choice] = self._Q[choice] + self._alpha_rew * (reward - self._Q[choice])
-            self._Q[1 - choice] = self._Q[1 - choice] + self._alpha_unr * ((1 - reward) - self._Q[1 - choice])
-        else:
-            self._Q[choice] = self._Q[choice] + self._alpha_unr * (reward - self._Q[choice])
-            self._Q[1 - choice] = self._Q[1 - choice] - (1 - self._alpha_unr) * self._Q[1 - choice]

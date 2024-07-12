@@ -18,25 +18,87 @@
 #                     SPACE: Dartmouth College, Hanover, NH
 #
 # =================================================================================================== #
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
-class Colosseum:
-    def __init__(self, name, root, data=None):
+class BaseEnv:
+    def __init__(self, name, root, **kwargs):
         self.name = name
         self.root = root
+        self._data = kwargs.get("data", None)
+        if self._data is not None:
+            self.rewards = self._data["Reward"].values
+            self.n_trials = len(self._data)
+        else:
+            self.rewards = np.array([])
+            self.n_trials = 0
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, data):
+        self._data = data
+        self.rewards = self._data["Reward"].values
+
+    def init_dataset(self, name, data):
+        df = pd.DataFrame(data)
+        df["Name"] = name
+        setattr(self, name, df)
+
+        return df
+
+    def record_data(self, event_data, data_name=None):
+        edf = pd.DataFrame(event_data)
+        if data_name is None:
+            self.data = pd.concat([self.data, edf], ignore_index=True)
+        else:
+            df = getattr(self, data_name)
+            df = pd.concat([df, edf], ignore_index=True)
+            setattr(self, data_name, df)
+
+    def record_event(self, data_name=None, **kwargs):
+
+        event = {key: [value] for key, value in kwargs.items()}
+        edf = pd.DataFrame(event)
+        if data_name is None:
+            self.data = pd.concat([self.data, edf], ignore_index=True)
+        else:
+            df = getattr(self, data_name)
+            df = pd.concat([df, edf], ignore_index=True)
+            setattr(self, data_name, df)
+
+    def mask_event(self, event_column, values):
+        mask = self.data[event_column].isin(values)
+        return mask, mask.sum()
+
+    def save_data(self, data_name=None, filename=None):
+
+        path = self.root / "data" / "models"
+        path.mkdir(parents=True, exist_ok=True)
+
+        if data_name is None:
+            data = getattr(self, self.name)
+        else:
+            data = self._data
+
+        if filename is None:
+            filename = f"{self.name}_{data['Name']}.csv"
+
+        file = path / filename
+        data.to_csv(file, index=False)
+
+
+class Colosseum(BaseEnv):
+    def __init__(self, name, root, **kwargs):
+        super().__init__(name, root, **kwargs)
+
         self.warriors = []
         self.animals = []
+        self.followers = []
         self.audience = []
-        if data is None:
-            self.data = pd.DataFrame()
-            self.rewards = np.array([])
-        else:
-            self.data = data
-            self.rewards = data.get(["Reward"], pd.Series([])).values
-
-        self.n_trials = self.data.shape[0]
 
     def fuse(self, choices, rewards):
 
@@ -53,21 +115,17 @@ class Colosseum:
     def sample(self):
         pass
 
-    def event_mask(self, event_column, values):
-        mask = self.data[event_column].isin(values)
-        return mask, mask.sum()
-
     def add_warrior(self, warrior):
         self.warriors.append(warrior)
 
     def add_follower(self, name, choice_column, action_map, state_map=None):
         choices = self.data[choice_column].values
-        animal = Animal(name, choices, action_map, state_map)
-        animal.rewards = self.rewards
+        flr = Follower(name, choices, action_map, state_map)
+        flr.rewards = self.rewards
 
         # Add the animal to the colosseum
-        setattr(self, name, animal)
-        self.animals.append(animal)
+        setattr(self, name, flr)
+        self.followers.append(flr)
 
     def add_audience(self, audience):
         self.audience.append(audience)
@@ -93,7 +151,7 @@ class Colosseum:
         self._data = data
 
 
-class Animal:
+class Follower:
     def __init__(self, name, choice_history, action_map, state_map=None):
         self.name = name
         self.choices = choice_history

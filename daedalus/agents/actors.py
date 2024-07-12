@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 from daedalus.utils import moving_average
 
 
-class Trainer:
+class PersonalTrainer:
     """
     A class to train agents.
 
@@ -34,17 +34,32 @@ class Trainer:
         env (object): an env object
         n_episodes (int): number of episodes
     """
-
-    def __init__(self, agent):
+    def __init__(self, agent=None):
         """
         Initialize the trainer with an agent and an environment.
         """
-        self.agent = agent
+        self._agent = agent
         self.results = []
-
+        self.simulations = []
         self.trained = False
 
-    def do(self, data, n_epochs=10, bounded=False):
+    @property
+    def agent(self):
+        return self._agent
+
+    @agent.setter
+    def agent(self, agent):
+        self._agent = agent
+
+    def reset(self):
+        """
+        Reset the trainer.
+        """
+        self.results = []
+        self.simulations = []
+        self.trained = False
+
+    def teach(self, data, n_epochs=10, bounded=False, verbose=False):
         """
         Train the agent for a specified number of episodes.
         """
@@ -54,32 +69,38 @@ class Trainer:
 
             # Initialize the parameters
             if not bounded:
-                init_params = [np.random.uniform(0, 1) for _ in range(self.agent.n_params)]
+                init_params = [np.random.uniform(0, 1) for _ in range(len(self._agent.params))]
             else:
                 init_params = []
-                for p in range(self.agent.n_params):
-                    lowerb, upperb = self.agent.bounds[p]
+                for lowerb, upperb in self._agent.bounds:
+                    if lowerb == -np.inf:
+                        lowerb = -1e3
+                    if upperb == np.inf:
+                        upperb = 1e3
                     rand = np.random.uniform(lowerb, upperb) / init_mult
                     rand = np.clip(rand, lowerb, upperb)
                     init_params.append(rand)
 
             # Start the optimization
-            print("Epoch: ", ep + 1)
-            self.agent.reset()
+            self._agent.reset()
             results = minimize(
-                self.agent.loss,
+                self._agent.loss,
                 init_params,
                 args=(data,),
-                method="L-BFGS-B" if bounded else "BFGS",
-                # method="BFGS",
-                options={"disp": True},
-                bounds=self.agent.bounds if bounded else None,
+                # method="L-BFGS-B" if bounded else "BFGS",
+                method="Nelder-Mead",
+                # method="Powell",
+                options={"disp": True if verbose else False, "maxiter": 1000},
+                bounds=self._agent.bounds if bounded else None,
             )
             self.results.append(results)
-            print("- - " * 10)
+            if verbose:
+                print("Epoch: ", ep + 1, " Loss: ", results.fun)
+                print("- - " * 10)
+
         best_params = self.optimal_params()
         if best_params is not None:
-            self.agent.set_params(best_params)
+            self._agent.params = best_params
             self.trained = True
         else:
             print("No best parameters found.")
@@ -115,7 +136,7 @@ class Trainer:
         """
         Compute the McFadden R2 of the agent.
         """
-        return 1 - self.average_loss() / (n * np.log(0.5))
+        return (self.average_loss() / (n * np.log(0.5))) + 1
 
     def optimal_params(self):
         """
@@ -131,30 +152,58 @@ class Trainer:
 
         return best_params
 
-
-class Simulator:
-    """
-    A class to simulate agents.
-
-    Args:
-        agent (object): an agent object
-        data (object): a data object
-        n_episodes (int): number of episodes
-    """
-    def __init__(self, agent):
+    def aic(self, log_likelihood):
         """
-        Initialize the simulator with an agent and an environment.
-        """
-        self.agent = agent
-        self.simulations = []
+        Calculate the Akaike Information Criterion (AIC).
 
-    def set_model_params(self, params):
-        """
-        Set the model parameters.
-        """
-        self.agent.set_params(params)
+        Args:
+            log_likelihood (float): The log-likelihood of the model.
 
-    def do(self, data, params, n_episodes=10, n_samples=None, sample_strategy="random"):
+        Returns:
+            float: The AIC value.
+        """
+        return 2 * len(self.agent.params) - 2 * log_likelihood
+
+    def bic(self, log_likelihood, num_observations):
+        """
+        Calculate the Bayesian Information Criterion (BIC).
+
+        Args:
+            log_likelihood (float): The log-likelihood of the model.
+            num_observations (int): The number of observations in the dataset.
+
+        Returns:
+            float: The BIC value.
+        """
+        return len(self.agent.params) * np.log(num_observations) - 2 * log_likelihood
+
+    def aic_p(self, log_likelihood, num_observations):
+        """
+        Calculate the corrected Akaike Information Criterion (AICc).
+
+        Args:
+            log_likelihood (float): The log-likelihood of the model.
+            num_observations (int): The number of observations in the dataset.
+
+        Returns:
+            float: The AICc value.
+        """
+        return 2 * len(self.agent.params) / num_observations - 2 * log_likelihood
+
+    def bic_p(self, log_likelihood, num_observations):
+        """
+        Calculate the corrected Bayesian Information Criterion (BICc).
+
+        Args:
+            log_likelihood (float): The log-likelihood of the model.
+            num_observations (int): The number of observations in the dataset.
+
+        Returns:
+            float: The BICc value.
+        """
+        return 2 * len(self.agent.params) * np.log(num_observations) / num_observations - 2 * log_likelihood
+
+    def exam(self, data, params, n_episodes=10, n_samples=None, sample_strategy="random"):
         """
         Simulate the agent for a specified number of episodes.
         """
@@ -162,8 +211,8 @@ class Simulator:
         for _ in range(n_episodes):
 
             # Reset the agent and set the parameters
-            self.agent.reset()
-            self.agent.set_params(params)
+            self._agent.reset()
+            self._agent.params = params
 
             # Sample the data
             if n_samples is not None:
@@ -176,62 +225,18 @@ class Simulator:
 
             # Simulate the agent
             for trial in sample:
-                action = self.agent.choose_action()
+                action = self._agent.choose_action()
                 reward = trial[action]
-                self.agent.update(action, reward)
-
-            # Save the simulation
-            self.simulations.append(
-                {"choices": self.agent.choices, "rewards": self.agent.rewards, "history": self.agent.history}
-            )
-
-    def do_multiple(self, data, params, n_episodes=10, n_samples=None, sample_strategy="random"):
-        """
-        Simulate the agent for a specified number of episodes.
-        """
-        # np.random.seed(11)
-        for _ in range(n_episodes):
-
-            # Sample the data
-            if n_samples is not None:
-                if sample_strategy == "consecutive":
-                    sample = self.sample_consecutive(data, n_samples)
-                else:
-                    sample = self.sample(data, n_samples)
-            else:
-                sample = data
-
-            # Reset the agent and set the parameters
-            self.agent.reset()
-            self.agent.set_params(params)
-
-            # Simulate the agent
-            for cor_act, cor_feat, feat_left, rew in sample:
-                action_choice, feature_choice = self.agent.choose_action(feat_left)
-                if action_choice == cor_act and feature_choice == cor_feat:
-                    reward = rew
-                else:
-                    reward = 0
-                self.agent.update(action_choice, feature_choice, reward)
+                self._agent.update(action, reward)
 
             # Save the simulation
             self.simulations.append(
                 {
-                    "action_choices": self.agent.action_choices,
-                    "feature_choices": self.agent.feature_choices,
-                    "rewards": self.agent.rewards,
-                    "action_history": self.agent.action_history,
-                    "feature_history": self.agent.feature_history,
-                    "combined_history": self.agent.combined_history,
+                    "choices": self._agent.choices,
+                    "rewards": self._agent.rewards,
+                    "history": self._agent.history
                 }
             )
-
-    def reset(self):
-        """
-        Reset the simulator.
-        """
-        self.agent.reset()
-        self.simulations = []
 
     def sample_consecutive(self, array, sample_size):
         # Ensure sample_size is valid
@@ -253,13 +258,17 @@ class Simulator:
         indices = np.random.choice(data.shape[0], n_samples, replace=True)
         return data[indices]
 
-    def add_simulation(self, choices, rewards, history):
+    def add_sim(self, choices, rewards, history):
         """
         Add a simulation to the list of simulations.
         """
-        self.simulations.append({"choices": choices, "rewards": rewards, "history": history})
+        self.simulations.append({
+            "choices": choices,
+            "rewards": rewards,
+            "history": history
+            })
 
-    def plot_simulation(self, num, title, window=30):
+    def plot_sim(self, num, title, window=30):
         """
         Plot the history of the agent.
         """
@@ -291,6 +300,59 @@ class Simulator:
         fig.tight_layout()
 
         return fig
+
+    def save(self):
+        """
+        Save the simulations to a file.
+        """
+        pass
+
+
+class Coach(PersonalTrainer):
+
+    def __init__(self, agent=None):
+        super().__init__(agent)
+
+    def exam(self, data, params, n_episodes=10, n_samples=None, sample_strategy="random"):
+        """
+        Simulate the agent for a specified number of episodes.
+        """
+        # np.random.seed(11)
+        for _ in range(n_episodes):
+
+            # Sample the data
+            if n_samples is not None:
+                if sample_strategy == "consecutive":
+                    sample = self.sample_consecutive(data, n_samples)
+                else:
+                    sample = self.sample(data, n_samples)
+            else:
+                sample = data
+
+            # Reset the agent and set the parameters
+            self._agent.reset()
+            self._agent.params = params
+
+            # Simulate the agent
+            for cor_act, cor_feat, feat_left, rew in sample:
+                action_choice, feature_choice = self._agent.choose_action(feat_left)
+                if action_choice == cor_act and feature_choice == cor_feat:
+                    reward = rew
+                else:
+                    reward = 0
+                self._agent.update(action_choice, feature_choice, reward)
+
+            # Save the simulation
+            self.simulations.append(
+                {
+                    "action_choices": self._agent.action_choices,
+                    "feature_choices": self._agent.feature_choices,
+                    "rewards": self._agent.rewards,
+                    "action_history": self._agent.action_history,
+                    "feature_history": self._agent.feature_history,
+                    "combined_history": self._agent.combined_history,
+                }
+            )
 
     def plot_multi_sim(self, num, title, window=30):
         """
@@ -334,9 +396,3 @@ class Simulator:
         fig.tight_layout()
 
         return fig
-
-    def save(self):
-        """
-        Save the simulations to a file.
-        """
-        pass
