@@ -53,7 +53,7 @@ class Dumb(Agent):
             action (int): action chosen by the agent
             reward (float): reward received from the environment
         """
-        self.kiyoo[action] += self.alpha * (1 - self.kiyoo[action])
+        self.kiyoo[action] += self.alpha * (reward - self.kiyoo[action])
 
         # Save history
         self.choices.append(action)
