@@ -18,6 +18,8 @@
 #                       SPACE: Dartmouth College, Hanover, NH
 #
 # ======================================================================================== #
+import json
+
 import numpy as np
 
 from .base import BaseRL
@@ -34,83 +36,88 @@ class SimpleQ(BaseRL):
         bias: bias
 
     """
-    def __init__(self, **kwargs):
+    def __init__(self, name, root, version, alpha=0.5, decay=0.9, beta=1, bias=0, **kwargs):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(n_actions=2, **kwargs)
+        super().__init__(name, root, version, n_actions=2, n_states=1, **kwargs)
 
         # Initialize the Q-table with number of states and actions
         self._Q = np.zeros(self.n_actions)
 
         # Initialize the learning rate for reward and unrewarded actions
-        self.n_params = 5
-        self._alpha_rew = 0
-        self._alpha_unr = 0
-        self._beta = 0
-        self._bias = 0
-        self._decay = 0
+        self._n_params = 3
+        self._alpha = alpha
+        self._decay = decay
+        self._beta = beta
+        self.bounds = kwargs.get("bounds", [(1e-5, 1), (1e-5, 1), (1, 10)])
+
+        self.bias = bias
 
     def reset(self):
-        self._Q = np.zeros(self.n_actions) + np.random.rand(self.n_actions)
+        self._Q = np.zeros(2)
+        self.choices = []
+        self.rewards = []
+        self.history = []
 
-    def update(self, choice, reward):
+    def update(self, action, reward):
         """
         Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
         next state.
 
         Args:
-            choice (int): action chosen by the agent
+            action (int): action chosen by the agent
             reward (float): reward received from the environment
         """
         # Chosen action
-        self._Q[choice] = self._Q[choice] + self._alpha_rew * (reward - self._Q[choice])
+        self._Q[action] += self._alpha * (reward - self._Q[action])
 
         # Update unchosen action
-        self._Q[1 - choice] = self._Q[1 - choice] - self._decay * self._Q[1 - choice]
+        self._Q[1 - action] *= (1 - self._decay)
 
-    def choose_action(self, available_actions):
+        # Clipping
+        # self.Q = np.clip(self.Q, -self.clip_value, self.clip_value)  # Clip values to avoid overflow
+
+        # Save history
+        self.choices.append(action)
+        self.rewards.append(reward)
+        self.history.append(self._Q.copy())
+
+    def choose_action(self):
         """
         Chooses an action based on the current state.
-
-        Args:
-            available_actions (list): list of available actions
 
         Returns:
             int: action chosen by the agent
         """
-        # Calculate the choice probabilities using the softmax function
-        probs = self.sigmoid()
+        probs = self.get_choice_probs()
+        return 0 if np.random.rand() < probs[0] else 1
 
-        if len(available_actions) > 1:
-            # Choose an action based on the probabilities
-            choice = np.random.choice(available_actions, p=probs)
-        else:
-            # Choose the only available stimulus
-            choice = available_actions[0]
-
-        return choice
-
-    def sigmoid(self, clip_value=10):
+    def get_choice_probs(self):
         """
-        Compute softmax values for each sets of scores in x.
+        Compute the choice probabilities.
+        """
+        q_diff = self._Q[0] - self._Q[1]
+        logits = self._beta * q_diff + self.bias
+        prob_left = self.sigmoid(logits)
+        return [prob_left, 1 - prob_left]
 
-        Args:
-            available_options (iterable): indices of available options
-            clip_value (int): value to clip the argument values to avoid overflow
+    def loss(self, params, data):
+        """
+        Compute the loss of the agent.
 
         Returns:
-            list: softmax values for each set of scores
+            float: loss of the agent
         """
-        # Calculate the argument values for all 4 options
-        exponent = -self._beta * (self._Q[0] - self._Q[1]) + self._bias
-
-        # Clip the value to avoid extreme values which can cause overflow.
-        clipped_exp = np.clip(exponent, -clip_value, clip_value)
-        left_prob = 1 / (1 + np.exp(clipped_exp))
-        probs = [left_prob, 1 - left_prob]
-
-        return probs
+        self.set_params(params)
+        self.reset()
+        nll = 0
+        for trial in data:
+            action, reward = trial
+            self.update(action, reward)
+            probs = self.get_choice_probs()
+            nll -= np.log(probs[action] + 1e-10)
+        return nll
 
     def set_params(self, params):
         """
@@ -119,32 +126,65 @@ class SimpleQ(BaseRL):
         Args:
             params (list): list of parameters to update
         """
-        assert len(params) == self._n_params, f"Expected {self._n_params} parameters, got {len(params)}."
-        self._alpha_rew, self._alpha_unr, self._beta, self._bias, self._decay = params
+        self._alpha, self._decay, self._beta = params
+
+    def save(self, filename=None):
+        """
+        Save the agent's state to a file.
+        """
+        path = self.root / "data" / "RL"
+        path.mkdir(parents=True, exist_ok=True)
+        if filename is None:
+            filename = f"{self.name}_state_v{self.version}.json"
+        file = path / filename
+
+        state = {
+            'Q': self._Q.tolist(),
+            'alpha': self._alpha,
+            'decay': self._decay,
+            'beta': self._beta,
+            'bias': self.bias,
+            'choices': self.choices,
+            'rewards': self.rewards,
+            'history': [q.tolist() for q in self.history]
+        }
+        with open(file, 'w') as f:
+            json.dump(state, f)
+
+    def load(self, filename=None):
+        """
+        Load the agent's state from a file.
+        """
+        path = self.root / "data" / "RL"
+        path.mkdir(parents=True, exist_ok=True)
+        if filename is None:
+            filename = f"{self.name}_state_v{self.version}.json"
+        file = path / filename
+        if file.is_file():
+            with open(filename, 'r') as f:
+                state = json.load(f)
+            self._Q = np.array(state['Q'])
+            self._alpha = state['alpha']
+            self._decay = state['decay']
+            self._beta = state['beta']
+            self.bias = state['bias']
+            self.choices = state['choices']
+            self.rewards = state['rewards']
+            self.history = [np.array(q) for q in state['history']]
+        else:
+            print(f"File {filename} not found. Agent state not loaded.")
 
     @property
     def params(self):
-        return self._alpha_rew, self._alpha_unr, self._beta, self._bias, self._decay
+        return self._alpha, self._decay, self._beta
 
     @property
-    def Q(self):
-        return self._Q
+    def alpha(self):
+        return self._alpha
 
-    @property
-    def alpha_rew(self):
-        return self._alpha_rew
-
-    @alpha_rew.setter
-    def alpha_rew(self, value):
-        self._alpha_rew = value
-
-    @property
-    def alpha_unr(self):
-        return self._alpha_unr
-
-    @alpha_unr.setter
-    def alpha_unr(self, value):
-        self._alpha_unr = value
+    @alpha.setter
+    def alpha(self, value):
+        self._alpha = value
 
     @property
     def decay(self):
@@ -153,6 +193,14 @@ class SimpleQ(BaseRL):
     @decay.setter
     def decay(self, value):
         self._decay = value
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @beta.setter
+    def beta(self, value):
+        self._beta = value
 
 
 class MultiChoiceQ(BaseRL):
@@ -173,7 +221,7 @@ class MultiChoiceQ(BaseRL):
         self._Q = np.zeros(self.n_actions)
 
         # Initialize the learning rate for reward and unrewarded actions
-        self.n_params = 5
+        self._n_params = 5
         self._alpha_rew = 0
         self._alpha_unr = 0
         self._beta = 0

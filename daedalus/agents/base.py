@@ -23,23 +23,54 @@ class BaseRL:
         n_states (int): number of states
     """
 
-    def __init__(self, name, root, n_actions, n_states, **kwargs):
+    def __init__(self, name, root, version, n_actions, n_states, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
         """
         self.name = name
         self.root = root
+        self.version = version
         self.n_actions = n_actions
         self.n_states = n_states
         self._Q = np.zeros((self.n_states, self.n_actions))
 
         # Get/initialize some parameters
-        self.n_params = 3
-        self._alpha = kwargs.get("alpha", 0.5)
-        self._beta = kwargs.get("beta", 0.5)
-        self._bias = kwargs.get("bias", 0.5)
+        self._n_params = 0
         self._init_val = kwargs.get("init_val", 0.5)
+        self.clip_value = kwargs.get("clip_value", 100)
+
+        # Saving history
+        self.choices = []
+        self.rewards = []
+        self.history = []
+
+    def sigmoid(self, x):
+        """
+        Compute softmax values for each sets of scores in x.
+
+        Args:
+            clip_value (int): value to clip the argument values to avoid overflow
+
+        Returns:
+            list: softmax values for each set of scores
+        """
+        x = np.clip(x, -self.clip_value, self.clip_value)
+        return 1 / (1 + np.exp(-x))
+
+    @staticmethod
+    def softmax(q_values):
+        """
+        Compute softmax values for each sets of scores in x.
+
+        Args:
+            q_values (array): array of Q-values
+
+        Returns:
+            array: softmax values for each set of scores
+        """
+        exp_values = np.exp(q_values - np.max(q_values))  # stability improvement
+        return exp_values / np.sum(exp_values)
 
     @abstractmethod
     def reset(self):
@@ -71,27 +102,3 @@ class BaseRL:
     @Q.setter
     def Q(self, value):
         self._Q = value
-
-    @property
-    def alpha(self):
-        return self._alpha
-
-    @alpha.setter
-    def alpha(self, value):
-        self._alpha = value
-
-    @property
-    def beta(self):
-        return self._beta
-
-    @beta.setter
-    def beta(self, value):
-        self._beta = value
-
-    @property
-    def bias(self):
-        return self._bias
-
-    @bias.setter
-    def bias(self, value):
-        self._bias = value

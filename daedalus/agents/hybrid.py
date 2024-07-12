@@ -6,104 +6,149 @@ created 3/6/2024
 
 Description:
 """
-from typing import Union
-
 import numpy as np
 
-from . import QLearningAgent
+from .base import BaseRL
+from .simple import SimpleQ
 
 
-class ChoiceRewardQ(QLearningAgent):
+class FeatureAction(SimpleQ):
     """
-    A simple Q-learning agent for discrete state and action spaces with a softmax action selection policy and
-    update rule based on action/feature choice.
-
-    Args:
-        alpha: learning rate
-        beta: ?
-        bias: bias
-
+    A Q-learning agent for discrete state and action spaces with a softmax action selection policy and hybrid
+    feature + action update rule.
     """
-    def __init__(self, choice_type, **params):
+    def __init__(
+        self,
+        name, root, version,
+        alpha_act=0.5, alpha_feat=0.5, decay_act=0.9, decay_feat=0.9, beta=1, bias=0, omega=0.5,
+        **kwargs
+        ):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(**params)
+        super().__init__(name, root, version, **kwargs)
 
-        self._model_name = "ChoiceRewardQ"
-        self._choice_type = choice_type
-        self._n_params = 6  # lr_rew, lr_unr, beta, bias, decay, omega
+        self._V = np.zeros(self.n_actions).reshape(-1, 1)
+        self._Q = np.zeros(self.n_actions)
+        self._C = np.zeros((self.n_actions, self.n_actions))  # action x feature
 
-        self._R = np.zeros(self.num_actions) + self._init_val
-        self._C = np.zeros(self.num_actions) + self._init_val
+        self.action_choices = []
+        self.feature_choices = []
+        self.action_history = []
+        self.feature_history = []
+        self.combined_history = []
+
+        self._n_params = 6
+        self._alpha_act = alpha_act
+        self._alpha_feat = alpha_feat
+        self._decay_act = decay_act
+        self._decay_feat = decay_feat
+        self._beta = beta
+        self._omega = omega
+        bounds = [
+            (1e-5, 1),  # alpha_act
+            (1e-5, 1),  # alpha_feat
+            (1e-5, 1),  # decay_act
+            (1e-5, 1),  # decay_feat
+            (1, 10),  # beta
+            (0, 1),  # omega
+        ]
+        self.bounds = kwargs.get("bounds", bounds)
+
+        self.bias = bias
 
     def reset(self):
-        self.reset_R()
-        self.reset_C()
+        """
+        Reset the agent.
+        """
+        self._V = np.zeros(self.n_actions).reshape(-1, 1)
+        self._Q = np.zeros(self.n_actions)
+        self._C = np.zeros((self.n_actions, self.n_actions))
+        self.action_choices = []
+        self.feature_choices = []
+        self.action_history = []
+        self.feature_history = []
+        self.combined_history = []
+        self.rewards = []
 
-    def update(self, choice, reward):
+    def update(self, action_choice, feature_choice, reward):
         """
         Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
         next state.
         """
-        # Update reward value for chosen action
-        if reward:
-            self._R[choice] = self._R[choice] + self._lr_rew * (reward - self._Q[choice])
-        else:
-            self._R[choice] = self._R[choice] + self._lr_unr * (reward - self._Q[choice])
+        # Update action
+        self._V[action_choice] += self._alpha_act * (reward - self._V[action_choice])
+        self._V[1 - action_choice] *= (1 - self._decay_act)
 
-        # Update reward value for unchosen action
-        self._R[1 - choice] = self._R[1 - choice] - self._decay * self._R[1 - choice]
+        # Update feature
+        self._Q[feature_choice] += self._alpha_feat * (reward - self._Q[feature_choice])
+        self._Q[1 - feature_choice] *= (1 - self._decay_feat)
 
-        # Update choice value for chosen action
-        self._C[choice] = self._C[choice] + self._lr_choice * (choice - self._C[choice])
+        # Update combined
+        self._C = self._omega * self._V + (1 - self._omega) * self._Q
 
-        # Combine the choice and reward values
-        self._Q[choice] = self._R[choice] + self._omega * self._C[choice]
+        # Save history
+        self.action_choices.append(action_choice)
+        self.feature_choices.append(feature_choice)
+        self.rewards.append(reward)
+        self.feature_history.append(self._Q.copy())
+        self.action_history.append(self._V.copy())
+        self.combined_history.append(self._C.copy())
 
-    def choose_action(self, available_actions: Union[list, np.ndarray] = None):
+    def choose_action(self, feature_left):
         """
         Chooses an action based on the current state.
 
-        Args:
-            available_actions: list or array
+        Returns:
+            int: action chosen by the agent
+        """
+        probs = self.get_choice_probs(feature_left)
+        action_choice = 0 if np.random.rand() < probs[0] else 1
+        feature_choice = feature_left if action_choice == 0 else 1 - feature_left
+        return action_choice, feature_choice
+
+    def get_choice_probs(self, feature_left):
+        """
+        Compute the choice probabilities.
+        """
+        diff = self._C[0, feature_left] - self._C[1, 1 - feature_left]
+        logits = self._beta * diff + self.bias
+        prob_left = self.sigmoid(logits)
+        return [prob_left, 1 - prob_left]
+
+    def loss(self, params, data):
+        """
+        Compute the loss of the agent.
 
         Returns:
-            choice: int
+            float: loss of the agent
         """
-        # Calculate the choice probabilities using the softmax function
-        probs = self.binary_softmax()
-
-        if available_actions is not None and self.choice_type == "STIM_CHOICE":
-            # Choose the only available stimulus
-            choice = available_actions[0]
-        else:
-            # Choose an action based on the probabilities
-            choice = np.random.choice(np.arange(self.num_actions), p=probs)
-
-        return choice
+        self.set_params(params)
+        self.reset()
+        nll = 0
+        for trial in data:
+            action_choice, feature_choice, feature_left, reward = trial
+            self.update(action_choice, feature_choice, reward)
+            probs = self.get_choice_probs(feature_left)
+            nll -= np.log(probs[action_choice] + 1e-10)
+        return nll
 
     def set_params(self, params):
         """
         Update model parameters.
-        Args:
-            params:
-
-        Returns:
-
         """
-        assert len(params) == self._n_params, f"Expected {self._n_params} parameters, got {len(params)}."
-        self._lr_rew, self._lr_unr, self._beta, self._bias, self._decay, self._omega = params
-
-    def reset_R(self):
-        self._R = np.zeros(self.num_actions) + self._init_val
-
-    def reset_C(self):
-        self._C = np.zeros(self.num_actions) + self._init_val
+        (
+            self._alpha_act,
+            self._alpha_feat,
+            self._decay_act,
+            self._decay_feat,
+            self._beta,
+            self._omega
+        ) = params
 
     @property
-    def choice_type(self):
-        return self._choice_type
+    def params(self):
+        return [self._alpha_act, self._alpha_feat, self._decay_act, self._decay_feat, self._beta, self._omega]
 
     @property
     def C(self):
@@ -114,128 +159,219 @@ class ChoiceRewardQ(QLearningAgent):
         self._C = value
 
     @property
-    def R(self):
-        return self._R
+    def V(self):
+        return self._V
 
-    @R.setter
-    def R(self, value):
-        self._R = value
+    @V.setter
+    def V(self, value):
+        self._V = value
+
+    @property
+    def alpha_act(self):
+        return self._alpha_act
+
+    @alpha_act.setter
+    def alpha_act(self, value):
+        self._alpha_act = value
+
+    @property
+    def alpha_feat(self):
+        return self._alpha_feat
+
+    @alpha_feat.setter
+    def alpha_feat(self, value):
+        self._alpha_feat = value
+
+    @property
+    def decay_act(self):
+        return self._decay_act
+
+    @decay_act.setter
+    def decay_act(self, value):
+        self._decay_act = value
+
+    @property
+    def omega(self):
+        return self._omega
+
+    @omega.setter
+    def omega(self, value):
+        self._omega = value
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @beta.setter
+    def beta(self, value):
+        self._beta = value
 
 
-class StimulusActionQ(QLearningAgent):
-    """
-    A Q-learning agent for discrete state and action spaces with a softmax action selection policy and hybrid
-    feature + action update rule.
-    """
-    def __init__(self, **params):
+class ObjectBased(BaseRL):
+
+    def __init__(
+        self,
+        name, root, version,
+        alpha=0.5, decay=0.9, beta=1, bias=0,
+        **kwargs
+    ):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(**params)
+        super().__init__(name, root, version, n_actions=4, n_states=1, **kwargs)
 
-        self._model_name = "StimulusActionQ"
-        self._n_params = 6  # lr_rew, lr_unr, beta, bias, decay, eta
+        self._Q = np.zeros(self.n_actions)
+        self._alphas = np.repeat([alpha], 4)
+        self._decays = np.repeat([decay], 4)
+        self._beta = beta
 
-        self._A = np.zeros(self.num_actions) + self._init_val
-        self._S = np.zeros(self.num_actions) + self._init_val
-        self._Q = np.zeros(self.num_actions * 2) + self._init_val
+        self._n_params = 9
+        bounds = [
+            (1e-5, 1),  # alpha
+            (1e-5, 1),  # alpha
+            (1e-5, 1),  # alpha
+            (1e-5, 1),  # alpha
+            (1e-5, 1),  # decay
+            (1e-5, 1),  # decay
+            (1e-5, 1),  # decay
+            (1e-5, 1),  # decay
+            (1, 100),  # beta
+            # (0, 1),  # bias
+        ]
+        self.bounds = kwargs.get("bounds", bounds)
+
+        self._bias = bias
 
     def reset(self):
-        self.reset_A()
-        self.reset_S()
-        self.reset_Q()
+        """
+        Reset the agent.
+        """
+        self._Q = np.zeros(self.n_actions)
+        self.choices = []
+        self.rewards = []
+        self.history = []
 
     def update(self, choice, reward):
         """
         Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
         next state.
         """
-        if choice == 0:
-            action_choice = 0
-            stim_choice = 0
-        elif choice == 1:
-            action_choice = 0
-            stim_choice = 1
-        elif choice == 2:
-            action_choice = 1
-            stim_choice = 0
-        else:
-            action_choice = 1
-            stim_choice = 1
+        # Update action
+        for i in range(self.n_actions):
+            if i == choice:
+                self._Q[i] += self._alphas[i] * (reward - self._Q[i])
+            else:
+                self._Q[i] *= (1 - self._decays[i])
 
-        # Updated rewarded values
-        if reward:
-            self._A[action_choice] = self._A[action_choice] + self._lr_rew * (reward - self._A[action_choice])
-            self._S[stim_choice] = self._S[stim_choice] + self._lr_rew * (reward - self._S[stim_choice])
-        else:
-            self.A[action_choice] = self._A[action_choice] + self._lr_unr * (reward - self._A[action_choice])
-            self._S[stim_choice] = self._S[stim_choice] + self._lr_unr * (reward - self._S[stim_choice])
+        # Save history
+        self.choices.append(choice)
+        self.rewards.append(reward)
+        self.history.append(self._Q.copy())
 
-        # Decay unrewarded values
-        self._A[1 - action_choice] = self._A[1 - action_choice] - self._decay * self._A[1 - action_choice]
-        self._S[1 - stim_choice] = self._S[1 - stim_choice] - self._decay * self._S[1 - stim_choice]
-
-        # Combine the choice and reward values
-        self._Q[choice] = self._eta * self._A[action_choice] + (1 - self._eta) * self._S[stim_choice]
-
-    def choose_action(self, available_options: Union[list, np.ndarray] = None):
+    def choose_action(self, options):
         """
         Chooses an action based on the current state.
+
+        Returns:
+            int: action chosen by the agent
         """
-        # Calculate the choice probabilities using the softmax function
-        if available_options is not None:
-            probs = self.binary_softmax(available_options)
-        else:
-            raise ValueError("No available options.")
+        probs = self.get_choice_probs(options)
 
-        choice = np.random.choice(available_options, p=probs)
+        return options[0] if np.random.rand() < probs[0] else options[1]
 
-        return choice
+    def get_choice_probs(self, options):
+        """
+        Compute the choice probabilities.
+        """
+        diff = self._Q[options[0]] - self._Q[options[1]]
+        logits = self._beta * diff + self._bias
+        prob_a = self.sigmoid(logits)
+        return [prob_a, 1 - prob_a]
+
+    def loss(self, params, data):
+        """
+        Compute the loss of the agent.
+
+        Returns:
+            float: loss of the agent
+        """
+        self.set_params(params)
+        self.reset()
+        nll = 0
+        for trial in data:
+            choice, reward = trial
+            options = [choice, 3 - choice] if choice < 2 else [3 - choice, choice]
+            self.update(choice, reward)
+            probs = self.get_choice_probs(options)
+            nll -= np.log(probs[choice] + 1e-10)
+        return nll
 
     def set_params(self, params):
         """
         Update model parameters.
-        Args:
-            params:
-
-        Returns:
-
         """
-        assert len(params) == self._n_params, f"Expected {self._n_params} parameters, got {len(params)}."
-        self._lr_rew, self._lr_unr, self._beta, self._bias, self._decay, self._eta = params
-
-    def reset_A(self):
-        self._A = np.zeros(self.num_actions) + self._init_val
-
-    def reset_S(self):
-        self._S = np.zeros(self.num_actions) + self._init_val
-
-    def reset_Q(self):
-        self._Q = np.zeros(self.num_actions * 2) + self._init_val
-
-    @property
-    def A(self):
-        return self._A
-
-    @A.setter
-    def A(self, value):
-        self._A = value
+        (
+            self._alphas[0],
+            self._alphas[1],
+            self._alphas[2],
+            self._alphas[3],
+            self._decays[0],
+            self._decays[1],
+            self._decays[2],
+            self._decays[3],
+            self._beta,
+        ) = params
 
     @property
-    def S(self):
-        return self._S
-
-    @S.setter
-    def S(self, value):
-        self._S = value
+    def params(self):
+        return [
+            self._alphas[0],
+            self._alphas[1],
+            self._alphas[2],
+            self._alphas[3],
+            self._decays[0],
+            self._decays[1],
+            self._decays[2],
+            self._decays[3],
+            self._beta,
+        ]
 
     @property
-    def eta(self):
-        return self._eta
+    def Q(self):
+        return self._Q
 
-    @eta.setter
-    def eta(self, value):
-        self._eta = value
+    @Q.setter
+    def Q(self, value):
+        self._Q = value
 
+    @property
+    def alphas(self):
+        return self._alphas
 
+    @alphas.setter
+    def alphas(self, value):
+        self._alphas = value
 
+    @property
+    def decays(self):
+        return self._decays
+
+    @decays.setter
+    def decays(self, value):
+        self._decays = value
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @beta.setter
+    def beta(self, value):
+        self._beta = value
+
+    @property
+    def bias(self):
+        return self._bias
+
+    @bias.setter
+    def bias(self, value):
+        self._bias = value

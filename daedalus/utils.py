@@ -177,3 +177,25 @@ def time_index(time_point, frame_times):
         int: The frame number.
     """
     return np.argmax(frame_times > time_point)
+
+
+def moving_average(x, w=30):
+    avg = np.convolve(x, np.ones(w), 'valid') / w
+    return np.concatenate((np.full(w-1, np.nan), avg))
+
+
+def rotate_point(x, y, theta):
+    """
+    Rotates the x, y coordinates by an angle theta.
+
+    Args:
+        x (float): The x coordinate.
+        y (float): The y coordinate.
+        theta (float): The angle of rotation.
+
+    Returns:
+        tuple: The rotated x, y coordinates.
+    """
+    x_rot = x * np.cos(theta) - y * np.sin(theta)
+    y_rot = x * np.sin(theta) + y * np.cos(theta)
+    return x_rot, y_rot
