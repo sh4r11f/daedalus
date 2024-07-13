@@ -23,7 +23,7 @@ import numpy as np
 from .base import Agent
 
 
-class Dumb(Agent):
+class VanillaDecay(Agent):
     """
     RL agent with feature-based learning.
 
@@ -33,16 +33,14 @@ class Dumb(Agent):
         sigma (float): standard deviation of the Gaussian noise
         bias (float): bias
     """
-    def __init__(self, name, alpha=0.5, sigma=1, bias=0.1, **kwargs):
+    def __init__(self, name, decay=0.5, **kwargs):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(name, alpha=alpha, **kwargs)
+        super().__init__(name, **kwargs)
 
-        self.alpha = alpha
-        self.sigma = sigma
-        self.bias = bias
-        self.bounds = kwargs.get("bounds", [(1e-5, 1), (1e-5, 1), (-np.inf, np.inf)])
+        self.decay = decay
+        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
 
     def update(self, action, reward):
         """
@@ -53,23 +51,24 @@ class Dumb(Agent):
             action (int): action chosen by the agent
             reward (float): reward received from the environment
         """
-        self.kiyoo[action] += self.alpha * (reward - self.kiyoo[action])
+        # Update the Q-values
+        super().update(action, reward)
 
-        # Save history
-        self.choices.append(action)
-        self.rewards.append(reward)
-        self.history.append(self.kiyoo.copy())
+        # Decay the unchosen action
+        self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
 
     @property
     def params(self):
-        return self.alpha, self.sigma, self.bias
+        pars = super().params
+        return *pars, self.decay
 
     @params.setter
     def params(self, values):
-        self.alpha, self.sigma, self.bias = values
+        super().params = values[:-1]
+        self.decay = values[-1]
 
 
-class Dumber(Dumb):
+class RewUnrew(Agent):
     """
     RL agent with feature-based learning.
 
@@ -80,14 +79,14 @@ class Dumber(Dumb):
         sigma (float): standard deviation of the Gaussian noise
         bias (float): bias
     """
-    def __init__(self, name, alpha=0.5, alpha_genius=0.5, sigma=1, bias=0.1, **kwargs):
+    def __init__(self, name, alpha_unr=0.5, **kwargs):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(name, alpha=alpha, sigma=sigma, bias=bias, **kwargs)
+        super().__init__(name, **kwargs)
 
-        self.alpha_genius = alpha_genius
-        self.bounds = kwargs.get("bounds", [(1e-5, 1), (1e-5, 1), (1e-5, 1), (-np.inf, np.inf)])
+        self.alpha_unr = alpha_unr
+        self.bounds.append(kwargs.get("alpha_unr_bounds", [1e-5, 1]))
 
     def update(self, action, reward):
         """
@@ -98,48 +97,77 @@ class Dumber(Dumb):
             action (int): action chosen by the agent
             reward (float): reward received from the environment
         """
+        # Update the Q-values for rewarded actions
         if reward == 1:
-            self.kiyoo[action] += self.alpha * (1 - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
+        # Update the Q-values for unrewarded actions
         else:
-            self.kiyoo[action] -= self.alpha_genius * self.kiyoo[action]
-
-        # Save history
-        self.choices.append(action)
-        self.rewards.append(reward)
-        self.history.append(self.kiyoo.copy())
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha_unr * (reward - self.kiyoo[action])
 
     @property
     def params(self):
-        return self.alpha, self.alpha_genius, self.sigma, self.bias
+        pars = super().params
+        return *pars, self.alpha_unr
 
     @params.setter
     def params(self, values):
-        self.alpha, self.alpha_genius, self.sigma, self.bias = values
+        super().params = values[:-1]
+        self.alpha_unr = values[-1]
 
 
-class DumbHybrid(Agent):
+class RewUnrewDecay(RewUnrew):
     """
-    RL agent with feature-based learning.
-
-    Args:
-        name (str): name of the agent
-        alpha (float): learning rate
-        sigma (float): standard deviation of the Gaussian noise
-        bias (float): bias
     """
-    def __init__(self, name, alpha=0.5, sigma=1, bias=0.1, omega=0.5, **kwargs):
+    def __init__(self, name, decay=0.5, **kwargs):
         """
         Initialize the Q-learning agent
         """
-        super().__init__(name, alpha=alpha, **kwargs)
+        super().__init__(name, **kwargs)
 
-        self.alpha = alpha
-        self.sigma = sigma
-        self.bias = bias
+        self.decay = decay
+        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
+
+    def update(self, action, reward):
+        """
+        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
+        next state.
+
+        Args:
+            action (int): action chosen by the agent
+            reward (float): reward received from the environment
+        """
+        # Update the Q-values for rewarded actions
+        super().update(action, reward)
+
+        # Decay the unchosen action
+        self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
+
+    @property
+    def params(self):
+        pars = super().params
+        return *pars, self.decay
+
+    @params.setter
+    def params(self, values):
+        super().params = values[:-1]
+        self.decay = values[-1]
+
+
+class Hybrid(RewUnrew):
+    """
+    """
+    def __init__(self, name, omega=0.5, **kwargs):
+        """
+        Initialize the Q-learning agent
+        """
+        super().__init__(name, **kwargs)
+
         self.omega = omega
-        self.bounds = kwargs.get("bounds", [(1e-5, 1), (1e-5, 1), (-np.inf, np.inf), (1e-5, 1)])
+        self.bounds.append(kwargs.get("omega_bounds", (1e-5, 1)))
 
-        self.vee = np.zeros(self.kiyoo.shape)
+        # Initialize the other set of values
+        self.vee = np.zeros(self.n_actions)
+        self.vee_history = []
 
     def update(self, action, feature, reward):
         """
@@ -150,42 +178,64 @@ class DumbHybrid(Agent):
             action (int): action chosen by the agent
             reward (float): reward received from the environment
         """
-        self.kiyoo[action] += self.alpha * (1 - self.kiyoo[action])
-        self.vee[feature] += self.alpha * (1 - self.vee[feature])
+        # Update the Q-values
+        if reward == 1:
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
+        else:
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha_unr * (reward - self.kiyoo[action])
 
-        # Save history
-        self.choices.append(action)
-        self.rewards.append(reward)
-        self.history.append(self.kiyoo.copy())
+        # Update the feature values
+        if reward == 1:
+            self.vee[feature] = self.vee[feature] + self.alpha * (reward - self.vee[feature])
+        else:
+            self.vee[feature] = self.vee[feature] + self.alpha_unr * (reward - self.vee[feature])
 
     @property
     def params(self):
-        return self.alpha, self.sigma, self.bias, self.omega
+        pars = super().params
+        return *pars, self.omega
 
     @params.setter
     def params(self, values):
-        self.alpha, self.sigma, self.bias, self.omega = values
+        super().params = values[:-1]
+        self.omega = values[-1]
 
-    def choose_action(self, feat_left):
+    def reset(self):
+        """
+        Reset the agent.
+        """
+        super().reset()
+        self.vee = np.zeros(self.n_actions)
+
+    def choose_action(self, left_feat):
         """
         Chooses an action based on the current state.
 
         Returns:
             int: action chosen by the agent
         """
-        probs = self.get_choice_probs(feat_left)
+        probs = self.get_choice_probs(left_feat)
         return 0 if np.random.rand() < probs[0] else 1
 
     def get_choice_probs(self, left_feat):
         """
         Compute the choice probabilities.
         """
+        probs = np.zeros(self.n_actions)
+
+        # Compute the difference in Q-values
         act_diff = self.kiyoo[0] - self.kiyoo[1]
         feat_diff = self.vee[left_feat] - self.vee[1 - left_feat]
+
+        # Compute the weighted logits
         q_diff = (1 - self.omega) * act_diff + self.omega * feat_diff
+
+        # Compute the probabilities
         logits = (1 / self.sigma) * q_diff + self.bias
-        prob_left = self.sigmoid(logits)
-        return [prob_left, 1 - prob_left]
+        probs[0]= self.sigmoid(logits)
+        probs[1] = 1 - probs[0]
+
+        return probs
 
     def loss(self, params, data):
         """
@@ -194,18 +244,68 @@ class DumbHybrid(Agent):
         Returns:
             float: loss of the agent
         """
-        self.params = params
+        # Reset the agent
         self.reset()
+        self.params = params
+
+        # Run the agent on the data
         nll = 0
         for trial in data:
-            action, reward, feat_left = trial
-            if action == 0:
-                feat_choice = feat_left
-            else:
-                feat_choice = 1 - feat_left
-            self.update(action, feat_choice, reward)
-            probs = self.get_choice_probs(feat_left)
-            ll = np.log(probs[action] + 1e-10)
-            self.losses.append(ll)
-            nll -= ll
+
+            # Unpack the trial
+            action, reward, left_feat = trial
+
+            # Get the feature choice
+            feature = left_feat if action == 0 else 1 - left_feat  # left and right features are complementary
+
+            # Update the Q-values
+            self.update(action, feature, reward)
+
+            # Compute the choice probabilities
+            probs = self.get_choice_probs(left_feat)
+
+            # Compute the log-likelihood
+            log_like = np.log(probs[action] + 1e-10)
+            self.hoods.append(log_like)
+            nll -= log_like
+
         return nll
+
+
+class HybridRewUnrewDecay(Hybrid):
+    """
+    """
+    def __init__(self, name, decay=0.5, **kwargs):
+        """
+        Initialize the Q-learning agent
+        """
+        super().__init__(name, **kwargs)
+
+        self.decay = decay
+        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
+
+    def update(self, action, feature, reward):
+        """
+        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
+        next state.
+
+        Args:
+            action (int): action chosen by the agent
+            reward (float): reward received from the environment
+        """
+        # Update the Q-values and features
+        super().update(action, feature, reward)
+
+        # Decay the unchosen action and feature
+        self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
+        self.vee[1 - feature] = self.vee[1 - feature] - self.decay * self.vee[1 - feature]
+
+    @property
+    def params(self):
+        pars = super().params
+        return *pars, self.decay
+
+    @params.setter
+    def params(self, values):
+        super().params = values[:-1]
+        self.decay = values[-1]

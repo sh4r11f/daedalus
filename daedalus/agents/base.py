@@ -1,46 +1,79 @@
-#!/usr/bin/env python
-"""
-created 3/6/2024
-
-@author Sharif Saleki
-
-Description:
-"""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# =================================================================================================== #
+#
+#
+#                    SCRIPT: base.py
+#
+#
+#               DESCRIPTION: RLs with feature-based learning
+#
+#
+#                      RULE: DAYW
+#
+#
+#
+#                   CREATOR: Sharif Saleki
+#                         TIME: 06-07-2024-7810598105114117
+#                       SPACE: Dartmouth College, Hanover, NH
+#
+# =================================================================================================== #
 import numpy as np
 
 
-class BaseRL:
+class BaseGent:
     """
-    A Q-learning agent for discrete state and action spaces.
-
     Args:
         name (str): name of the agent
-        root (str): root directory for the agent
-        version (str): version of the agent
+        alpha (float): learning rate
         n_actions (int): number of actions
-        n_states (int): number of states
     """
-
-    def __init__(self, name, n_actions, n_states, version, **kwargs):
+    def __init__(self, name, n_actions, n_states, alpha, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
         """
         self.name = name
-        self.version = version
         self.n_actions = n_actions
         self.n_states = n_states
-        self._Q = np.zeros((self.n_states, self.n_actions))
+        self.alpha = alpha
 
-        # Get/initialize some parameters
-        self._n_params = 0
-        self._init_val = kwargs.get("init_val", 0.5)
-        self.clip_value = kwargs.get("clip_value", 100)
+        # Get/initialize parameters
+        self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        self.init_val = kwargs.get("init_val", 0.5)
+        self.clip_value = kwargs.get("clip_value", 1e8)
+        self.version = kwargs.get("version", "0.0")
 
-        # Saving history
+        # Bounds
+        self.bounds = kwargs.get("alpha_bounds", [(1e-5, 1)])
+
+        # For saving history
         self.choices = []
         self.rewards = []
         self.history = []
+        self.hoods = []
+
+    @property
+    def params(self):
+        return self.alpha
+
+    @params.setter
+    def params(self, *args):
+        self.alpha = args[0]
+
+    @property
+    def Q(self):
+        return self.kiyoo
+    
+    def reset(self):
+        """
+        Reset the Q-values to their initial values.
+        """
+        self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        self.choices = []
+        self.rewards = []
+        self.history = []
+        self.hoods = []
 
     def sigmoid(self, x):
         """
@@ -69,83 +102,49 @@ class BaseRL:
         exp_values = np.exp(q_values - np.max(q_values))  # stability improvement
         return exp_values / np.sum(exp_values)
 
-    @property
-    def n_params(self):
-        return self._n_params
 
-    @property
-    def Q(self):
-        return self._Q
-
-
-class Agent:
+class Agent(BaseGent):
     """
-    A Q-learning agent for discrete state and action spaces.
+    Binary choice agent.
 
     Args:
         name (str): name of the agent
         alpha (float): learning rate
         n_actions (int): number of actions
     """
-
-    def __init__(self, name, alpha=0.5, n_actions=2, **kwargs):
+    def __init__(self, name, sigma=1, bias=0.1, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
         """
-        self.name = name
-        self.alpha = alpha
-        self.n_actions = n_actions
-
-        # Get/initialize parameters
+        # Initialize the agent
+        super().__init__(name, n_actions=2, n_states=1, **kwargs)
         self.kiyoo = np.zeros(self.n_actions)
+        self.sigma = sigma
+        self.bias = bias
 
-        self.init_val = kwargs.get("init_val", 0.5)
-        self.clip_value = kwargs.get("clip_value", 1e8)
-        self.version = kwargs.get("version", "0.0")
+        # Set the bounds
+        self.bounds.append([kwargs.get("sigma_bounds", (1e-5, 1)), kwargs.get("bias_bounds", (-np.inf, np.inf))])
 
-        # For saving history
-        self.choices = []
-        self.rewards = []
-        self.history = []
-        self.losses = []
-
-    def reset(self):
+    def update(self, action, reward):
         """
-        Reset the Q-values to their initial values.
-        """
-        self.kiyoo = np.zeros(self.n_actions)
-        self.choices = []
-        self.rewards = []
-        self.history = []
-        self.losses = []
-
-    def sigmoid(self, x):
-        """
-        Compute softmax values for each sets of scores in x.
+        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
+        next state.
 
         Args:
-            clip_value (int): value to clip the argument values to avoid overflow
-
-        Returns:
-            list: softmax values for each set of scores
+            action (int): action chosen by the agent
+            reward (float): reward received from the environment
         """
-        x = np.clip(x, -self.clip_value, self.clip_value)
-        return 1 / (1 + np.exp(-x))
+        # Update the Q-values
+        self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
 
-    @staticmethod
-    def softmax(q_values):
-        """
-        Compute softmax values for each sets of scores in x.
+    @property
+    def params(self):
+        return self.alpha, self.sigma, self.bias
 
-        Args:
-            q_values (array): array of Q-values
-
-        Returns:
-            array: softmax values for each set of scores
-        """
-        exp_values = np.exp(q_values - np.max(q_values))  # stability improvement
-        return exp_values / np.sum(exp_values)
+    @params.setter
+    def params(self, values):
+        self.alpha, self.sigma, self.bias = values
 
     def choose_action(self):
         """
@@ -161,10 +160,20 @@ class Agent:
         """
         Compute the choice probabilities.
         """
+        # Initialize the probabilities
+        probs = np.zeros_like(self.kiyoo)
+
+        # Compute the difference in Q-values
         q_diff = self.kiyoo[0] - self.kiyoo[1]
+
+        # Compute the probabilities
         logits = (1 / self.sigma) * q_diff + self.bias
-        prob_left = self.sigmoid(logits)
-        return [prob_left, 1 - prob_left]
+
+        # Compute the probabilities
+        probs[0]= self.sigmoid(logits)
+        probs[1] = 1 - probs[0]
+
+        return probs
 
     def loss(self, params, data):
         """
@@ -173,27 +182,30 @@ class Agent:
         Returns:
             float: loss of the agent
         """
-        self.params = params
+        # Reset the agent
         self.reset()
+
+        # Update the parameters
+        self.params = params
+
+        # Run the agent on the data
         nll = 0
         for trial in data:
+
+            # Unpack the trial
             action, reward = trial
+
+            # Update the Q-values
             self.update(action, reward)
+
+            # Compute the choice probabilities
             probs = self.get_choice_probs()
-            ll = np.log(probs[action] + 1e-10)
-            self.losses.append(ll)
-            nll -= ll
+
+            # Compute the log-likelihood
+            log_like = np.log(probs[action] + 1e-10)
+            self.hoods.append(log_like)
+
+            # Update the log-likelihood
+            nll -= log_like
+
         return nll
-
-    @property
-    def params(self):
-        return self.alpha
-
-    @params.setter
-    def params(self, *args):
-        self.alpha = args[0]
-
-    @property
-    def Q(self):
-        return self.kiyoo
-
