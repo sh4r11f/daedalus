@@ -155,7 +155,7 @@ class RewUnrewDecay(RewUnrew):
         self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
 
 
-class Hybrid(RewUnrew):
+class HybridRewUnrew(RewUnrew):
     """
     """
     def __init__(self, name, omega=0.5, **kwargs):
@@ -265,7 +265,7 @@ class Hybrid(RewUnrew):
         return nll
 
 
-class HybridRewUnrewDecay(Hybrid):
+class HybridRewUnrewDecay(HybridRewUnrew):
     """
     """
     def __init__(self, name, decay=0.5, **kwargs):
