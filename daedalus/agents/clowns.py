@@ -27,23 +27,18 @@ from .base import BaseGent
 class ObjectBased(BaseGent):
     def __init__(self, name, sigma=0.5, bias=0.5, **kwargs):
         super().__init__(name, n_actions=4, n_states=1, **kwargs)
-        
+
         self.sigma = sigma
         self.bias = bias
+        self._params.append(["sigma", self.sigma])
+        self._params.append(["bias", self.bias])
 
         self.kiyoo = np.zeros(self.n_actions)
-        self.bounds.append(kwargs.get("sigma_bounds", [(1e-5, 1)]), kwargs.get("bias_bounds", [(-1, 1)]))
-        
+        self.bounds.append(kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))))
+        self.bounds.append(kwargs.get("bias_bounds", ("bias", (-np.inf, np.inf))))
+
     def update(self, action, reward):
         self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
-
-    @property
-    def params(self):
-        return self.alpha, self.sigma, self.bias
-    
-    @params.setter
-    def params(self, values):
-        self.alpha, self.sigma, self.bias = values
 
     def choose_action(self, options):
         probs = self.get_choice_probs(options)
@@ -69,7 +64,7 @@ class ObjectBased(BaseGent):
         # Reset
         self.reset()
         self.params = params
-        
+
         # Run on data
         nll = 0
         for trial in data:
@@ -103,8 +98,9 @@ class ObjectRewUnrew(ObjectBased):
         super().__init__(name, **kwargs)
 
         self.alpha_unr = alpha_unr
-        self.bounds.append(kwargs.get("alpha_unr_bounds", [(1e-5, 1)]))
-        
+        self._params.append(["alpha_unr", self.alpha_unr])
+        self.bounds.append(kwargs.get("alpha_unr_bounds", ("alpha_unr", (1e-5, 1))))
+
     def update(self, action, reward):
         # Update rewarded option
         if reward == 1:
@@ -119,17 +115,8 @@ class ObjectRewUnrewDecay(ObjectRewUnrew):
 
         super().__init__(name, **kwargs)
         self.decay = decay
-        self.bounds.append(kwargs.get("decay_bounds", [(1e-5, 1)]))
-
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.decay
-
-    @params.setter
-    def params(self, values):
-        super().params= values[:-1]
-        self.decay = values[-1]
+        self._params.append(["decay", self.decay])
+        self.bounds.append(kwargs.get("decay_bounds", ("decay", (1e-5, 1))))
 
     def update(self, action, reward):
         # Update chosen option

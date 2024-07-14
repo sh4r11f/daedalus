@@ -23,6 +23,35 @@ import numpy as np
 from .base import Agent
 
 
+class Vanilla(Agent):
+    """
+    RL agent with feature-based learning.
+
+    Args:
+        name (str): name of the agent
+        alpha (float): learning rate
+        sigma (float): standard deviation of the Gaussian noise
+        bias (float): bias
+    """
+    def __init__(self, name, **kwargs):
+        """
+        Initialize the Q-learning agent
+        """
+        super().__init__(name, **kwargs)
+
+    def update(self, action, reward):
+        """
+        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
+        next state.
+
+        Args:
+            action (int): action chosen by the agent
+            reward (float): reward received from the environment
+        """
+        # Update the Q-values
+        super().update(action, reward)
+
+
 class VanillaDecay(Agent):
     """
     RL agent with feature-based learning.
@@ -40,7 +69,8 @@ class VanillaDecay(Agent):
         super().__init__(name, **kwargs)
 
         self.decay = decay
-        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
+        self._params.append(["decay", self.decay])
+        self.bounds.append(kwargs.get("decay_bounds", ("decay", (1e-5, 1))))
 
     def update(self, action, reward):
         """
@@ -56,16 +86,6 @@ class VanillaDecay(Agent):
 
         # Decay the unchosen action
         self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
-
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.decay
-
-    @params.setter
-    def params(self, values):
-        super().params = values[:-1]
-        self.decay = values[-1]
 
 
 class RewUnrew(Agent):
@@ -86,7 +106,8 @@ class RewUnrew(Agent):
         super().__init__(name, **kwargs)
 
         self.alpha_unr = alpha_unr
-        self.bounds.append(kwargs.get("alpha_unr_bounds", [1e-5, 1]))
+        self._params.append(["alpha_unr", self.alpha_unr])
+        self.bounds.append(kwargs.get("alpha_unr_bounds", ("alpha_unr", (1e-5, 1))))
 
     def update(self, action, reward):
         """
@@ -99,20 +120,10 @@ class RewUnrew(Agent):
         """
         # Update the Q-values for rewarded actions
         if reward == 1:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (1 - self.kiyoo[action])
         # Update the Q-values for unrewarded actions
         else:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha_unr * (reward - self.kiyoo[action])
-
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.alpha_unr
-
-    @params.setter
-    def params(self, values):
-        super().params = values[:-1]
-        self.alpha_unr = values[-1]
+            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
 
 
 class RewUnrewDecay(RewUnrew):
@@ -125,7 +136,8 @@ class RewUnrewDecay(RewUnrew):
         super().__init__(name, **kwargs)
 
         self.decay = decay
-        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
+        self._params.append(["decay", self.decay])
+        self.bounds.append(kwargs.get("decay_bounds", ("decay", (1e-5, 1))))
 
     def update(self, action, reward):
         """
@@ -142,16 +154,6 @@ class RewUnrewDecay(RewUnrew):
         # Decay the unchosen action
         self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
 
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.decay
-
-    @params.setter
-    def params(self, values):
-        super().params = values[:-1]
-        self.decay = values[-1]
-
 
 class Hybrid(RewUnrew):
     """
@@ -163,7 +165,8 @@ class Hybrid(RewUnrew):
         super().__init__(name, **kwargs)
 
         self.omega = omega
-        self.bounds.append(kwargs.get("omega_bounds", (1e-5, 1)))
+        self._params.append(["omega", self.omega])
+        self.bounds.append(kwargs.get("omega_bounds", ("omega", (1e-5, 1))))
 
         # Initialize the other set of values
         self.vee = np.zeros(self.n_actions)
@@ -189,16 +192,6 @@ class Hybrid(RewUnrew):
             self.vee[feature] = self.vee[feature] + self.alpha * (reward - self.vee[feature])
         else:
             self.vee[feature] = self.vee[feature] + self.alpha_unr * (reward - self.vee[feature])
-
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.omega
-
-    @params.setter
-    def params(self, values):
-        super().params = values[:-1]
-        self.omega = values[-1]
 
     def reset(self):
         """
@@ -282,7 +275,8 @@ class HybridRewUnrewDecay(Hybrid):
         super().__init__(name, **kwargs)
 
         self.decay = decay
-        self.bounds.append(kwargs.get("decay_bounds", [1e-5, 1]))
+        self._params.append(["decay", self.decay])
+        self.bounds.append(kwargs.get("decay_bounds", ("decay", (1e-5, 1))))
 
     def update(self, action, feature, reward):
         """

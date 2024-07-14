@@ -59,7 +59,7 @@ class PersonalTrainer:
         self.simulations = []
         self.trained = False
 
-    def teach(self, data, n_epochs=10, bounded=False, verbose=False):
+    def teach(self, data, n_epochs=10, method="Nelder-Mead", bounded=False, verbose=False):
         """
         Train the agent for a specified number of episodes.
         """
@@ -72,7 +72,7 @@ class PersonalTrainer:
                 init_params = [np.random.uniform(0, 1) for _ in range(len(self._agent.params))]
             else:
                 init_params = []
-                for lowerb, upperb in self._agent.bounds:
+                for par, (lowerb, upperb) in self._agent.bounds:
                     if lowerb == -np.inf:
                         lowerb = -1e3
                     if upperb == np.inf:
@@ -87,11 +87,9 @@ class PersonalTrainer:
                 self._agent.loss,
                 init_params,
                 args=(data,),
-                # method="L-BFGS-B" if bounded else "BFGS",
-                method="Nelder-Mead",
-                # method="Powell",
+                method=method,
                 options={"disp": True if verbose else False, "maxiter": 1000},
-                bounds=self._agent.bounds if bounded else None,
+                bounds=[bound[1] for bound in self._agent.bounds] if bounded else None,
             )
             self.results.append(results)
             if verbose:
@@ -132,11 +130,11 @@ class PersonalTrainer:
         """
         return np.nanmax([result.fun for result in self.results])
 
-    def mcfadden_r2(self, n):
+    def mcfadden_r2(self, log_likelihood, n):
         """
         Compute the McFadden R2 of the agent.
         """
-        return (self.average_loss() / (n * np.log(0.5))) + 1
+        return 1 - (log_likelihood / (n * np.log(0.5)))
 
     def optimal_params(self):
         """

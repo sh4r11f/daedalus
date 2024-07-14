@@ -28,7 +28,7 @@ class BaseGent:
         alpha (float): learning rate
         n_actions (int): number of actions
     """
-    def __init__(self, name, n_actions, n_states, alpha, **kwargs):
+    def __init__(self, name, n_actions, n_states, alpha=0.5, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
@@ -37,15 +37,15 @@ class BaseGent:
         self.n_actions = n_actions
         self.n_states = n_states
         self.alpha = alpha
+        self._params = [["alpha", self.alpha]]
+        self.bounds = kwargs.get("alpha_bounds", [("alpha", (1e-5, 1))])
 
         # Get/initialize parameters
-        self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        # self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        self.kiyoo = np.zeros(self.n_actions)
         self.init_val = kwargs.get("init_val", 0.5)
         self.clip_value = kwargs.get("clip_value", 1e8)
         self.version = kwargs.get("version", "0.0")
-
-        # Bounds
-        self.bounds = kwargs.get("alpha_bounds", [(1e-5, 1)])
 
         # For saving history
         self.choices = []
@@ -55,21 +55,25 @@ class BaseGent:
 
     @property
     def params(self):
-        return self.alpha
+        return tuple([param[1] for param in self._params])
 
     @params.setter
-    def params(self, *args):
-        self.alpha = args[0]
+    def params(self, values):
+        for i, value in enumerate(values):
+            # value = np.clip(value, self.bounds[i][0], self.bounds[i][1])
+            self._params[i][1] = value
+            setattr(self, self._params[i][0], value)
 
     @property
     def Q(self):
         return self.kiyoo
-    
+
     def reset(self):
         """
         Reset the Q-values to their initial values.
         """
-        self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        # self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        self.kiyoo = np.zeros(self.n_actions)
         self.choices = []
         self.rewards = []
         self.history = []
@@ -119,12 +123,14 @@ class Agent(BaseGent):
         """
         # Initialize the agent
         super().__init__(name, n_actions=2, n_states=1, **kwargs)
-        self.kiyoo = np.zeros(self.n_actions)
+        # self.kiyoo = np.zeros(self.n_actions)
         self.sigma = sigma
         self.bias = bias
+        self._params.extend([["sigma", self.sigma], ["bias", self.bias]])
 
         # Set the bounds
-        self.bounds.append([kwargs.get("sigma_bounds", (1e-5, 1)), kwargs.get("bias_bounds", (-np.inf, np.inf))])
+        self.bounds.append(kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))))
+        self.bounds.append(kwargs.get("bias_bounds", ("bias", (-np.inf, np.inf))))
 
     def update(self, action, reward):
         """
@@ -137,14 +143,6 @@ class Agent(BaseGent):
         """
         # Update the Q-values
         self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
-
-    @property
-    def params(self):
-        return self.alpha, self.sigma, self.bias
-
-    @params.setter
-    def params(self, values):
-        self.alpha, self.sigma, self.bias = values
 
     def choose_action(self):
         """

@@ -179,9 +179,25 @@ def time_index(time_point, frame_times):
     return np.argmax(frame_times > time_point)
 
 
-def moving_average(x, w=30):
+def moving_average(x, w=30, pad_nan=False):
+    """
+    Calculate the moving average of a signal.
+
+    Args:
+        x (array): The signal to average.
+        w (int): The window size.
+        pad_nan (bool): Whether to pad the returned signal with nan values.
+
+    Returns:
+        array: The moving average.
+    """
     avg = np.convolve(x, np.ones(w), 'valid') / w
-    return np.concatenate((np.full(w-1, np.nan), avg))
+    if pad_nan:
+        res = np.full(len(x), np.nan)
+        res[w-1:] = avg
+        return res
+    else:
+        return avg
 
 
 def rotate_point(x, y, theta):
@@ -199,3 +215,19 @@ def rotate_point(x, y, theta):
     x_rot = x * np.cos(theta) - y * np.sin(theta)
     y_rot = x * np.sin(theta) + y * np.cos(theta)
     return x_rot, y_rot
+
+
+def mat2cart(x, y, width, height):
+    """
+    Convert the x, y coordinates from matrix to cartesian.
+
+    Args:
+        x (int): The x coordinate.
+        y (int): The y coordinate.
+        width (int): The width of the matrix.
+        height (int): The height of the matrix.
+
+    Returns:
+        tuple: The cartesian x, y coordinates.
+    """
+    return x - width // 2, height // 2 - y

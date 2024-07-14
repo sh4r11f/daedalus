@@ -28,7 +28,7 @@ class BaseEnv:
         self.root = root
         self._data = kwargs.get("data", None)
         if self._data is not None:
-            self.rewards = self._data["Reward"].values
+            self.rewards = self._data["reward"].values
             self.n_trials = len(self._data)
         else:
             self.rewards = np.array([])
@@ -71,7 +71,9 @@ class BaseEnv:
             setattr(self, data_name, df)
 
     def mask_event(self, event_column, values):
-        mask = self.data[event_column].isin(values)
+        mask = np.zeros(len(self.data), dtype=bool)
+        mask[self.data[event_column].isin(values)] = True
+
         return mask, mask.sum()
 
     def save_data(self, data_name=None, filename=None):
