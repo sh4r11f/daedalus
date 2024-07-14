@@ -293,13 +293,3 @@ class HybridRewUnrewDecay(HybridRewUnrew):
         # Decay the unchosen action and feature
         self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
         self.vee[1 - feature] = self.vee[1 - feature] - self.decay * self.vee[1 - feature]
-
-    @property
-    def params(self):
-        pars = super().params
-        return *pars, self.decay
-
-    @params.setter
-    def params(self, values):
-        super().params = values[:-1]
-        self.decay = values[-1]
