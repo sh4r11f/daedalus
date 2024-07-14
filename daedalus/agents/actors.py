@@ -58,13 +58,14 @@ class PersonalTrainer:
         self.results = []
         self.simulations = []
         self.trained = False
+        self.agent.reset()
 
     def teach(self, data, n_epochs=10, method="Nelder-Mead", bounded=False, verbose=False):
         """
         Train the agent for a specified number of episodes.
         """
         # np.random.seed(11)
-        init_mult = 10
+        init_mult = 1
         for ep in range(n_epochs):
 
             # Initialize the parameters
