@@ -60,7 +60,9 @@ class BaseGent:
     @params.setter
     def params(self, values):
         for i, value in enumerate(values):
-            # value = np.clip(value, self.bounds[i][0], self.bounds[i][1])
+            if self._params[i][0] != "bias":
+                value = 1 / (1 + np.exp(-value))
+            # value = np.clip(value, float(self.bounds[i][1][0]), float(self.bounds[i][1][1]))
             self._params[i][1] = value
             setattr(self, self._params[i][0], value)
 
@@ -132,6 +134,17 @@ class Agent(BaseGent):
         self.bounds.append(kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))))
         self.bounds.append(kwargs.get("bias_bounds", ("bias", (-np.inf, np.inf))))
 
+    def reset(self):
+        """
+        Reset the Q-values to their initial values.
+        """
+        # self.kiyoo = np.zeros((self.n_states, self.n_actions))
+        self.kiyoo = np.zeros(self.n_actions)
+        self.choices = []
+        self.rewards = []
+        self.history = []
+        self.hoods = []
+
     def update(self, action, reward):
         """
         Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
@@ -168,7 +181,7 @@ class Agent(BaseGent):
         logits = (1 / self.sigma) * q_diff + self.bias
 
         # Compute the probabilities
-        probs[0]= self.sigmoid(logits)
+        probs[0] = self.sigmoid(logits)
         probs[1] = 1 - probs[0]
 
         return probs
@@ -191,7 +204,7 @@ class Agent(BaseGent):
         for trial in data:
 
             # Unpack the trial
-            action, reward = trial
+            action, _, reward = trial
 
             # Update the Q-values
             self.update(action, reward)

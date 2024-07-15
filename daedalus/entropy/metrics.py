@@ -11,7 +11,6 @@ from .probability import (
     stay_signal, switch_signal, win_signal, lose_signal,
     joint_prob, cond_prob, three_way_prob,
 )
-from scipy.ndimage import generic_filter
 
 
 class BaseMetrics:
@@ -51,7 +50,7 @@ class BaseMetrics:
 class ProbabilityMetrics(BaseMetrics):
     """
     """
-    def __init__(self, choices, rewards, window=10):
+    def __init__(self, choices, rewards, window=20):
         super().__init__(choices, rewards)
 
         self.window = window

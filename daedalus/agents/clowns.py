@@ -37,6 +37,9 @@ class ObjectBased(BaseGent):
         self.bounds.append(kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))))
         self.bounds.append(kwargs.get("bias_bounds", ("bias", (-np.inf, np.inf))))
 
+    def reset(self):
+        self.kiyoo = np.zeros(self.n_actions)
+
     def update(self, action, reward):
         self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
 
@@ -70,22 +73,33 @@ class ObjectBased(BaseGent):
         for trial in data:
 
             # Unpack
-            action, reward, left_feat = trial
-
-            # Find available options
-            feature = left_feat if action == 0 else 1 - left_feat
+            action, feature, reward = trial
 
             # Find object number
-            chosen = action * 2 + feature
-            unchosen = (1 - action) * 2 + (1 - feature)
-            options = [chosen, unchosen]
+            if action == 0:
+                if feature == 0:
+                    options = [0, 3]
+                    choice = 0
+                else:
+                    options = [1, 2]
+                    choice = 1
+            else:
+                if feature == 0:
+                    options = [1, 2]
+                    choice = 2
+                else:
+                    options = [0, 3]
+                    choice = 3
+            # chosen = action * 2 + feature
+            # unchosen = (1 - action) * 2 + (1 - feature)
+            # options = [chosen, unchosen]
 
             # Update the value
-            self.update(action, reward)
+            self.update(choice, reward)
 
             # Calculate the loss
             probs = self.get_choice_probs(options)
-            log_like = np.log(probs[action])
+            log_like = np.log(probs[action] + 1e-10)
             self.hoods.append(log_like)
 
             nll -= log_like
@@ -93,7 +107,7 @@ class ObjectBased(BaseGent):
         return nll
 
 
-class ObjectRewUnrew(ObjectBased):
+class ObjectBasedRewUnrew(ObjectBased):
     def __init__(self, name, alpha_unr=0.5, **kwargs):
         super().__init__(name, **kwargs)
 
@@ -104,13 +118,13 @@ class ObjectRewUnrew(ObjectBased):
     def update(self, action, reward):
         # Update rewarded option
         if reward == 1:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (1 - self.kiyoo[action])
         # Update unrewarded options
         else:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha_unr * (reward - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
 
 
-class ObjectRewUnrewDecay(ObjectRewUnrew):
+class ObjectBasedRewUnrewDecay(ObjectBasedRewUnrew):
     def __init__(self, name, decay=0.5, **kwargs):
 
         super().__init__(name, **kwargs)

@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 from daedalus.utils import moving_average
 
 
-class PersonalTrainer:
+class Tailor:
     """
     A class to train agents.
 
@@ -60,7 +60,7 @@ class PersonalTrainer:
         self.trained = False
         self.agent.reset()
 
-    def teach(self, data, n_epochs=10, method="Nelder-Mead", bounded=False, verbose=False):
+    def fit(self, data, n_epochs=10, method="Nelder-Mead", bounded=False, verbose=False):
         """
         Train the agent for a specified number of episodes.
         """
@@ -75,9 +75,9 @@ class PersonalTrainer:
                 init_params = []
                 for par, (lowerb, upperb) in self._agent.bounds:
                     if lowerb == -np.inf:
-                        lowerb = -1e3
+                        lowerb = -1e10
                     if upperb == np.inf:
-                        upperb = 1e3
+                        upperb = 1e10
                     rand = np.random.uniform(lowerb, upperb) / init_mult
                     rand = np.clip(rand, lowerb, upperb)
                     init_params.append(rand)
@@ -89,7 +89,7 @@ class PersonalTrainer:
                 init_params,
                 args=(data,),
                 method=method,
-                options={"disp": True if verbose else False, "maxiter": 1000},
+                # options={"disp": True if verbose else False, "maxiter": 1000},
                 bounds=[bound[1] for bound in self._agent.bounds] if bounded else None,
             )
             self.results.append(results)
@@ -307,7 +307,7 @@ class PersonalTrainer:
         pass
 
 
-class Coach(PersonalTrainer):
+class Coach(Tailor):
 
     def __init__(self, agent=None):
         super().__init__(agent)

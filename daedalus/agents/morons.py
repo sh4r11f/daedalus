@@ -170,7 +170,6 @@ class HybridRewUnrew(RewUnrew):
 
         # Initialize the other set of values
         self.vee = np.zeros(self.n_actions)
-        self.vee_history = []
 
     def update(self, action, feature, reward):
         """
@@ -183,15 +182,15 @@ class HybridRewUnrew(RewUnrew):
         """
         # Update the Q-values
         if reward == 1:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (1 - self.kiyoo[action])
         else:
-            self.kiyoo[action] = self.kiyoo[action] + self.alpha_unr * (reward - self.kiyoo[action])
+            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
 
         # Update the feature values
         if reward == 1:
-            self.vee[feature] = self.vee[feature] + self.alpha * (reward - self.vee[feature])
+            self.vee[feature] = self.vee[feature] + self.alpha * (1 - self.vee[feature])
         else:
-            self.vee[feature] = self.vee[feature] + self.alpha_unr * (reward - self.vee[feature])
+            self.vee[feature] = self.vee[feature] - self.alpha_unr * self.vee[feature]
 
     def reset(self):
         """
@@ -199,6 +198,16 @@ class HybridRewUnrew(RewUnrew):
         """
         super().reset()
         self.vee = np.zeros(self.n_actions)
+
+    @property
+    def V(self):
+        return self.vee
+
+    def left_option_value(self, left_feat):
+        return (1 - self.omega) * self.kiyoo[0] + self.omega * self.vee[left_feat]
+
+    def right_option_value(self, left_feat):
+        return (1 - self.omega) * self.kiyoo[1] + self.omega * self.vee[1 - left_feat]
 
     def choose_action(self, left_feat):
         """
@@ -246,13 +255,13 @@ class HybridRewUnrew(RewUnrew):
         for trial in data:
 
             # Unpack the trial
-            action, reward, left_feat = trial
-
-            # Get the feature choice
-            feature = left_feat if action == 0 else 1 - left_feat  # left and right features are complementary
+            action, feature, reward = trial
 
             # Update the Q-values
             self.update(action, feature, reward)
+
+            # Get the feature on the left
+            left_feat = feature if action == 0 else 1 - feature
 
             # Compute the choice probabilities
             probs = self.get_choice_probs(left_feat)
