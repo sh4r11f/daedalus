@@ -27,6 +27,8 @@ import seaborn as sns
 
 import numpy as np
 
+from scipy import stats
+
 
 def read_config(file_path):
     """
@@ -231,3 +233,22 @@ def mat2cart(x, y, width, height):
         tuple: The cartesian x, y coordinates.
     """
     return x - width // 2, height // 2 - y
+
+
+def nancorr(x, y):
+    # Convert inputs to numpy arrays
+    x = np.array(x)
+    y = np.array(y)
+
+    # Mask for non-NaN values
+    mask = ~np.isnan(x) & ~np.isnan(y)
+
+    # Apply mask
+    x_filtered = x[mask]
+    y_filtered = y[mask]
+
+    # Calculate correlation
+    r, p = stats.pearsonr(x_filtered, y_filtered)
+
+    return r, p
+
