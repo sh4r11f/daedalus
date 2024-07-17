@@ -252,3 +252,35 @@ def nancorr(x, y):
 
     return r, p
 
+
+def rotate_cw(x, y, theta):
+    """
+    Rotates the x, y coordinates by an angle theta.
+
+    Args:
+        x (float): The x coordinate.
+        y (float): The y coordinate.
+        theta (float): The angle of rotation.
+
+    Returns:
+        tuple: The rotated x, y coordinates.
+    """
+    x_rot = x * np.cos(theta) - y * np.sin(theta)
+    y_rot = x * np.sin(theta) + y * np.cos(theta)
+    return x_rot, y_rot
+
+
+def rotate_ccw(x, y, theta):
+    """
+    Rotates the point by an angle theta.
+
+    Args:
+        point (tuple): The x, y coordinates.
+        theta (float): The angle of rotation.
+
+    Returns:
+        tuple: The rotated x, y coordinates.
+    """
+    x_rot = x * np.cos(theta) + y * np.sin(theta)
+    y_rot = -x * np.sin(theta) + y * np.cos(theta)
+    return x_rot, y_rot

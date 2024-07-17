@@ -35,9 +35,8 @@ class Project:
         self.folders = DirectoryManager()
         self.folders.add(
             config=self.root / "config",
-            data=self.root / "data",
             logs=self.root / "logs",
-            raw=self.settings.platform["Directories"].get("raw"),
+            data=self.settings.platform["Directories"].get("data"),
             tools=self.settings.platform["Directories"].get("tools"),
             fonts=self.settings.platform["Directories"].get("fonts"),
             )
