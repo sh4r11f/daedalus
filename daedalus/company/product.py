@@ -19,7 +19,7 @@
 #
 # =================================================================================================== #
 from daedalus import utils
-from .managers import FileManager, DirectoryManager, SettingsManager
+from .managers import FileManager, DirectoryManager, SettingsManager, DataManager
 
 
 class Project:
@@ -35,9 +35,14 @@ class Project:
         self.folders = DirectoryManager()
         self.folders.add(
             config=self.root / "config",
-            logs=self.root / "logs",
+            log=self.root / "log",
+            figures=self.root / "figures",
+            results=self.root / "results",
+            scripts=self.root / "scripts",
+            analysis=self.root / "analysis",
             data=self.settings.platform["Directories"].get("data"),
             tools=self.settings.platform["Directories"].get("tools"),
             fonts=self.settings.platform["Directories"].get("fonts"),
             )
         self.files = FileManager()
+        self.data = DataManager()

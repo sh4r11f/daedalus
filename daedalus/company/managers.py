@@ -22,95 +22,72 @@ from pathlib import Path
 from daedalus import utils
 
 
-class FileManager:
+class BaseManager:
     """
-    FileManager class to handle file operations for the vision module
-
-    Args:
-        root (str): Root directory for the vision module
-
-    Attributes:
-        root (str): Root directory for the vision module
-        data_dir (str): Data directory for the vision module
+    BaseManager class to handle base operations for the vision module
     """
     def __init__(self, **kwargs):
         self.name = kwargs.get("name")
 
     def add(self, **kwargs):
-
         for key, val in kwargs.items():
             setattr(self, key, val)
 
-    def _exist_rename(self, file):
+    def get(self, name):
+        """
+        Get the object for a given name
+
+        Args:
+            name (str): The name of the object to get
+
+        Returns:
+            object: The object
+        """
+        for attr in dir(self):
+            if name in attr:
+                return getattr(self, name)
+
+
+class FileManager(BaseManager):
+    """
+    FileManager class to handle file operations
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def _make_backup(self, file):
         """
         Handle file exists error
 
         Args:
             file_path (str): The file path that already exists
         """
-        if file.exists():
-            try:
-                file.rename(file.with_suffix(".BAK"))
-            except FileExistsError:
-                if self.debug:
-                    file.unlink()
-            return f"File {file.name} already exists. Renamed to {file.name}.BAK"
-
-    def get_file(self, file_name):
-        """
-        Get the file path for a given file name
-
-        Args:
-            file_name (str): The name of the file to get
-
-        Returns:
-            str: The file path
-        """
-        if isinstance(file_name, Path):
-            file_name = file_name.name
-
-        for attr in dir(self):
-            if file_name in attr:
-                return getattr(self, file_name)
-
-
-class DirectoryManager:
-    """
-    DirectoryManager class to handle directory operations for the vision module
-
-    Args:
-        root (str): Root directory for the vision module
-
-    Attributes:
-        root (str): Root directory for the vision module
-        data_dir (str): Data directory for the vision module
-    """
-    def __init__(self, **kwargs):
-
-        # Setup
-        self.name = kwargs.get("name")
+        backup = file.with_suffix(".BAK")
+        if backup.exists():
+            backup.unlink()
+        file.rename(backup)
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
-            if isinstance(val, str):
-                val = Path(val)
+            val = Path(val)
+            if val.exists():
+                self._make_backup(val)
+            setattr(self, key, val)
+
+
+class DirectoryManager(BaseManager):
+    """
+    DirectoryManager class to handle directory operations for the vision module
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def add(self, **kwargs):
+        for key, val in kwargs.items():
+            val = Path(val)
             if not val.exists():
                 val.mkdir(parents=True, exist_ok=True)
             setattr(self, key, val)
-
-    def get(self, dir_name):
-        """
-        Get the directory path for a given directory name
-
-        Args:
-            dir_name (str): The name of the directory to get
-
-        Returns:
-            str: The directory path
-        """
-        for attr in dir(self):
-            if dir_name in attr:
-                return str(getattr(self, dir_name))
 
 
 class SettingsManager:
@@ -135,20 +112,47 @@ class SettingsManager:
 
         self.version = self.main["Version"]
 
-    def load_config(self, config_name):
+    def load_config(self, name):
         """
         Load a configuration file
 
         Args:
             config_file (str): The configuration file to load
         """
-        return utils.read_config(self.config_dir / f"{config_name}.yaml")
+        return utils.read_config(self.config_dir / f"{name}.yaml")
 
-    def add_config(self, config_name):
+    def add(self, *args):
         """
         Add a configuration file to the settings manager
-
-        Args:
-            config_name (str): The name of the configuration file
         """
-        setattr(self, config_name, self.load_config(config_name))
+        for name in args:
+            setattr(self, name, self.load_config(name))
+
+
+class DataManager(BaseManager):
+    """
+    DataManager class to handle data operations
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class SessionManager(BaseManager):
+    """
+    SessionManager class to handle session operations
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.data = DataManager()
+
+
+class SubjectManager(BaseManager):
+    """
+    SubjectManager class to handle subject operations
+    """
+    def __init__(self, sessions, **kwargs):
+        super().__init__(**kwargs)
+
+        for ses in sessions:
+            setattr(self, ses, SessionManager())
