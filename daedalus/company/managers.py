@@ -28,6 +28,7 @@ class BaseManager:
     """
     def __init__(self, **kwargs):
         self.name = kwargs.get("name")
+        self.num = kwargs.get("num")
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
@@ -70,8 +71,14 @@ class FileManager(BaseManager):
     def add(self, **kwargs):
         for key, val in kwargs.items():
             val = Path(val)
+            setattr(self, key, val)
+
+    def make(self, **kwargs):
+        for key, val in kwargs.items():
+            val = Path(val)
             if val.exists():
                 self._make_backup(val)
+            val.touch()
             setattr(self, key, val)
 
 
@@ -83,6 +90,11 @@ class DirectoryManager(BaseManager):
         super().__init__(**kwargs)
 
     def add(self, **kwargs):
+        for key, val in kwargs.items():
+            val = Path(val)
+            setattr(self, key, val)
+
+    def make(self, **kwargs):
         for key, val in kwargs.items():
             val = Path(val)
             if not val.exists():
@@ -144,15 +156,10 @@ class SessionManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.data = DataManager()
-
 
 class SubjectManager(BaseManager):
     """
     SubjectManager class to handle subject operations
     """
-    def __init__(self, sessions, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-        for ses in sessions:
-            setattr(self, ses, SessionManager())
