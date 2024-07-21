@@ -313,3 +313,7 @@ def compute_roc_curve(y_true, y_score):
         fpr.append(fp / (fp + tn))
 
     return fpr, tpr, thresholds
+
+
+def bonferroni_correction(p_values, n_comparisons, alpha=0.05):
+    return np.minimum(np.around(p_values * n_comparisons, 4), 1.0)
