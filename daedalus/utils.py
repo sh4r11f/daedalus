@@ -284,3 +284,32 @@ def rotate_ccw(x, y, theta):
     x_rot = x * np.cos(theta) + y * np.sin(theta)
     y_rot = -x * np.sin(theta) + y * np.cos(theta)
     return x_rot, y_rot
+
+
+def compute_roc_curve(y_true, y_score):
+    """
+    Compute the ROC curve for a binary classifier.
+
+    Args:
+        y_true (array): The true labels.
+        y_score (array): The predicted scores.
+
+    Returns:
+        tuple: The false positive rate, true positive rate, and thresholds.
+    """
+    thresholds = np.linspace(0, 1, 100)
+    tpr = []
+    fpr = []
+
+    for threshold in thresholds:
+        y_pred = y_score > threshold
+
+        tp = np.sum(y_pred & y_true)
+        fp = np.sum(y_pred & ~y_true)
+        tn = np.sum(~y_pred & ~y_true)
+        fn = np.sum(~y_pred & y_true)
+
+        tpr.append(tp / (tp + fn))
+        fpr.append(fp / (fp + tn))
+
+    return fpr, tpr, thresholds
