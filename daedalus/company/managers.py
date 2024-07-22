@@ -19,6 +19,8 @@
 #
 # =================================================================================================== #
 from pathlib import Path
+import shutil
+
 from daedalus import utils
 
 
@@ -29,10 +31,12 @@ class BaseManager:
     def __init__(self, **kwargs):
         self.name = kwargs.get("name")
         self.num = kwargs.get("num")
+        self._all = []
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
             setattr(self, key, val)
+            self._all.append(key)
 
     def get(self, name):
         """
@@ -47,6 +51,10 @@ class BaseManager:
         for attr in dir(self):
             if name in attr:
                 return getattr(self, name)
+
+    def show(self):
+        for att in self._all:
+            print(att)
 
 
 class FileManager(BaseManager):
@@ -72,6 +80,7 @@ class FileManager(BaseManager):
         for key, val in kwargs.items():
             val = Path(val)
             setattr(self, key, val)
+            self._all.append(key)
 
     def make(self, **kwargs):
         for key, val in kwargs.items():
@@ -93,6 +102,7 @@ class DirectoryManager(BaseManager):
         for key, val in kwargs.items():
             val = Path(val)
             setattr(self, key, val)
+            self._all.append(key)
 
     def make(self, **kwargs):
         for key, val in kwargs.items():
@@ -100,6 +110,19 @@ class DirectoryManager(BaseManager):
             if not val.exists():
                 val.mkdir(parents=True, exist_ok=True)
             setattr(self, key, val)
+
+    def empty(self, *args):
+        for name in args:
+            path_ = getattr(self, name)
+            path_ = Path(path_)
+            if not path_.is_dir():
+                raise ValueError(f"The provided path {path_.name} is not a directory.")
+
+            for item in path_.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
 
 
 class SettingsManager:
@@ -123,6 +146,7 @@ class SettingsManager:
         self.platform = settings["Platforms"][platform]
 
         self.version = self.main["Version"]
+        self._all = []
 
     def load_config(self, name):
         """
@@ -139,6 +163,7 @@ class SettingsManager:
         """
         for name in args:
             setattr(self, name, self.load_config(name))
+            self._all.append(name)
 
 
 class DataManager(BaseManager):

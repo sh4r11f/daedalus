@@ -39,7 +39,7 @@ class TimeKeeper:
     def time(self):
         return time.time()
 
-    def tick(self, duration):
+    def tick(self):
         self._tick = time.time()
 
     def tock(self):

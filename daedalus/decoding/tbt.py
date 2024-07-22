@@ -18,9 +18,6 @@
 #                          SPACE: Dartmouth College, Hanover, NH
 #
 # =================================================================================================== #
-from shutil import rmtree
-from joblib import Parallel, delayed, Memory
-
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import KNNImputer
@@ -43,30 +40,6 @@ class TrialSVC(Decoder):
     def __init__(self, **kwargs):
         super().__init__(name="SVC", **kwargs)
 
-        # Preproess
-        scaler = StandardScaler()
-        imp = KNNImputer(n_neighbors=self.params["n_neighbors"], add_indicator=True)
-
-        # Classifier
-        svm = SVC(kernel=self.params["svm_kernel"], class_weight="balanced")
-
-        # Pipeline
-        self.pipe = Pipeline(
-            steps=[
-                ("scalar", scaler),
-                ("imp", imp),
-                ("svm", svm),
-            ],
-            memory=self.memory,
-            verbose=self.params["verbose"],
-            )
-
-        # Cross validation
-        self.kf = StratifiedKFold(
-            n_splits=self.params["cv_splits"],
-            shuffle=False,
-            )
-
     def fit_params(self, X, y):
         """
         Fit the classifier to the average data to find the best params.
@@ -78,16 +51,52 @@ class TrialSVC(Decoder):
             y : ndarray
                 The labels for the decoding analysis.
         """
+        # Clean memory
+        self.clean()
+
+        # Preproess
+        scaler = StandardScaler()
+        imp = KNNImputer(n_neighbors=self.params["n_neighbors"], add_indicator=True)
+
+        # Classifier
+        svm = SVC(
+            probability=False,
+            kernel=self.params["svm_kernel"],
+            class_weight="balanced",
+            max_iter=self.params["max_iter"],
+            )
+
+        # Pipeline
+        pipe = Pipeline(
+            steps=[
+                ("scaler", scaler),
+                ("imp", imp),
+                ("svm", svm),
+            ],
+            # memory=self.memory,
+            verbose=self.params["verbose"],
+            )
+
+        # Cross validation
+        kf = StratifiedKFold(
+            n_splits=2,
+            # n_splits=self.params["cv_splits"],
+            shuffle=False,
+            )
+
         # Randomized search
         clf = RandomizedSearchCV(
-            estimator=self.pipe,
+            estimator=pipe,
             param_distributions={
-                "svm__C": np.logspace(-6, 6, 12), "svm__gamma": np.logspace(-8, 8)
+                # "svm__C": np.logspace(-10, 10, 10), "svm__gamma": np.logspace(-10, 10, 10)
+                "svm__C": np.logspace(-10, 10, 2), "svm__gamma": np.logspace(-10, 10, 2)
                 },
             n_iter=self.params["n_iter"],
             scoring=self.params["scoring"],
+            # n_jobs=1,
             n_jobs=self.params["n_jobs"],
-            cv=self.kf,
+            cv=kf,
+            refit=False,
             verbose=self.params["verbose"]
             )
 
@@ -95,22 +104,25 @@ class TrialSVC(Decoder):
         self.clock.tick()
 
         # Fit the classifier
-        clf.fit(X, y)
+        clf.fit(X[:20, :], y[:20])
 
         # Get score and params
         t = self.clock.tock()
         cv_results = clf.cv_results_
         best = {"time": t}
+        top_score = np.inf
         for scorer in self.params["scoring"]:
             best_index = cv_results[f'rank_test_{scorer}'].argmin()
             best_score = cv_results[f'mean_test_{scorer}'][best_index]
+            if best_score < top_score:
+                top_score = best_score
             best_params = {key.replace('param_', ''): cv_results[key][best_index] for key in cv_results if key.startswith('param_')}
             best[scorer] = {
                 'score': best_score,
                 'params': best_params
             }
 
-        return best
+        return top_score, best, clf
 
     def fit_bin(self, X_train, y_train, X_test, y_test, clf_params):
         """
@@ -125,8 +137,8 @@ class TrialSVC(Decoder):
         """
         # Classifier
         clf = self.pipe.clone()
-        clf.svm.set_params(
-            kernel=self.params["svm_kernel"],
+        clf.set_params(
+            svm__kernel=self.params["svm_kernel"],
             probability=True,
             class_weight="balanced",
             C=clf_params["C"],
