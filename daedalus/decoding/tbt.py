@@ -23,9 +23,9 @@ from joblib import Parallel, delayed, Memory
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from skleanr.impute import KNNImputer
+from sklearn.impute import KNNImputer
 from sklearn.svm import SVC
-from sklearn.enemble import HistGradientBoostingClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
     balanced_accuracy_score,
@@ -48,38 +48,71 @@ class TrialSVC(Decoder):
         imp = KNNImputer(n_neighbors=self.params["n_neighbors"], add_indicator=True)
 
         # Classifier
-        svm = SVC(class_weight="balanced")
+        svm = SVC(kernel=self.params["svm_kernel"], class_weight="balanced")
 
         # Pipeline
-        pipe = Pipeline(
+        self.pipe = Pipeline(
             steps=[
                 ("scalar", scaler),
                 ("imp", imp),
-                ("clf", svm),
+                ("svm", svm),
             ],
             memory=self.memory,
             verbose=self.params["verbose"],
             )
 
         # Cross validation
-        kf = StratifiedKFold(
+        self.kf = StratifiedKFold(
             n_splits=self.params["cv_splits"],
             shuffle=False,
             )
 
+    def fit_params(self, X, y):
+        """
+        Fit the classifier to the average data to find the best params.
+
+        Args:
+            X : ndarray
+                The features for the decoding analysis.
+
+            y : ndarray
+                The labels for the decoding analysis.
+        """
         # Randomized search
-        self.clf = RandomizedSearchCV(
-            estimator=pipe,
-            param_distributions=self.params["param_dist"],
+        clf = RandomizedSearchCV(
+            estimator=self.pipe,
+            param_distributions={
+                "svm__C": np.logspace(-6, 6, 12), "svm__gamma": np.logspace(-8, 8)
+                },
             n_iter=self.params["n_iter"],
             scoring=self.params["scoring"],
             n_jobs=self.params["n_jobs"],
-            refit=True,
-            cv=kf,
+            cv=self.kf,
             verbose=self.params["verbose"]
             )
 
-    def magic(self, X_train, y_train, X_test, y_test):
+        # Time
+        self.clock.tick()
+
+        # Fit the classifier
+        clf.fit(X, y)
+
+        # Get score and params
+        t = self.clock.tock()
+        cv_results = clf.cv_results_
+        best = {"time": t}
+        for scorer in self.params["scoring"]:
+            best_index = cv_results[f'rank_test_{scorer}'].argmin()
+            best_score = cv_results[f'mean_test_{scorer}'][best_index]
+            best_params = {key.replace('param_', ''): cv_results[key][best_index] for key in cv_results if key.startswith('param_')}
+            best[scorer] = {
+                'score': best_score,
+                'params': best_params
+            }
+
+        return best
+
+    def fit_bin(self, X_train, y_train, X_test, y_test, clf_params):
         """
         Calculate the accuracy and f1 score for a given fold.
 
@@ -90,20 +123,31 @@ class TrialSVC(Decoder):
         Returns:
             metrics (tuple): The metrics for the decoding analysis.
         """
+        # Classifier
+        clf = self.pipe.clone()
+        clf.svm.set_params(
+            kernel=self.params["svm_kernel"],
+            probability=True,
+            class_weight="balanced",
+            C=clf_params["C"],
+            gamma=clf_params["gamma"]
+            )
+
         # Time
         self.clock.tick()
 
         # Fit the training data
-        self.clf.fit(X_train, y_train)
+        clf.fit(X_train, y_train)
 
         # Get the predicted labels for the test set
-        y_pred = self.clf.predict(X_test)
+        y_pred = clf.predict(X_test)
 
         # Probability of labels
-        true_prob = best_clf.predict_proba(X_test)[0, y_test]
-        confidence_prob = best_clf.predict_proba(X_test)[0, y_pred]
+        pred = clf.predict_proba(X_test)
+        positive_prob = pred[0, y_test]
+        confidence_prob = pred[0, y_pred]
 
-        metrics = (y_pred[0], true_prob[0], confidence_prob[0])
+        metrics = (y_pred[0], positive_prob[0], confidence_prob[0])
 
         return metrics
 
@@ -161,68 +205,3 @@ class TrialSVC(Decoder):
         auc_scores = roc_auc_score(y, predictions, average='weighted')
 
         metrics = (true_probs, confidence_probs, f1_scores, accuracy_scores, auc_scores)
-
-    def compute_roc(self, X: np.ndarray, y: np.ndarray, classifier):
-        """
-        Compute the ROC curve for the given classifier.
-
-        Args:
-            X : ndarray
-                The features for the decoding analysis.
-
-            y : ndarray
-                The labels for the decoding analysis.
-
-            classifier : sklearn classifier
-                The best classifier found during decoding.
-
-        Returns:
-            fpr : ndarray
-                The false positive rate for the ROC curve.
-
-            tpr : ndarray
-                The true positive rate for the ROC curve.
-
-            roc_auc : float
-                The area under the ROC curve.
-        """
-        if self._clf_name == 'SVC':
-            # Get the decision function values for the test set
-            y_score = classifier.decision_function(X)
-        else:
-            # Get the probability of predicted labels for the test set
-            y_score = classifier.predict_proba(X)[:, 1]
-
-        # Get number of classes
-        n_classes = len(np.unique(y))
-
-        # Binary or multiclasss
-        if n_classes == 2:
-
-            # Binarize the labels
-            binary_y_test = y.astype(float).astype(int)
-
-            # Compute the ROC curve
-            fpr, tpr, _ = roc_curve(binary_y_test, y_score)
-
-            # Compute the area under the ROC curve
-            roc_auc = roc_auc_score(binary_y_test, y_score)
-
-        elif n_classes > 2:
-
-            # Binarize the labels
-            binary_y_test = label_binarize(y, classes=list(range(n_classes)))
-
-            # Compute the area under the ROC curve
-            roc_auc = roc_auc_score(binary_y_test, y_score, average='micro', multi_class='ovr')
-
-            # Placeholders for fpr and tpr
-            fpr, tpr = 0, 0
-
-        else:
-
-            raise ValueError(
-                f"Number of classes must be equal or greater than 2. The number of classes is {n_classes}."
-            )
-
-        return fpr, tpr, roc_auc
