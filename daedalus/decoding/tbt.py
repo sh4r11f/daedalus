@@ -79,8 +79,8 @@ class TrialSVC(Decoder):
 
         # Cross validation
         kf = StratifiedKFold(
-            n_splits=2,
-            # n_splits=self.params["cv_splits"],
+            # n_splits=2,
+            n_splits=self.params["cv_splits"],
             shuffle=False,
             )
 
@@ -88,8 +88,8 @@ class TrialSVC(Decoder):
         clf = RandomizedSearchCV(
             estimator=pipe,
             param_distributions={
-                # "svm__C": np.logspace(-10, 10, 10), "svm__gamma": np.logspace(-10, 10, 10)
-                "svm__C": np.logspace(-10, 10, 2), "svm__gamma": np.logspace(-10, 10, 2)
+                "svm__C": np.logspace(-6, 6, 12), "svm__gamma": np.logspace(-8, 8, 12)
+                # "svm__C": np.logspace(-1, 1, 2), "svm__gamma": np.logspace(-1, 1, 2)
                 },
             n_iter=self.params["n_iter"],
             scoring=self.params["scoring"],
@@ -104,7 +104,7 @@ class TrialSVC(Decoder):
         self.clock.tick()
 
         # Fit the classifier
-        clf.fit(X[:20, :], y[:20])
+        clf.fit(X, y)
 
         # Get score and params
         t = self.clock.tock()
