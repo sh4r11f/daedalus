@@ -16,13 +16,13 @@ def readme():
 setup(
     name='daedalus',
     version='1.0',
-    description='Set of routine functionalities for neuroscience experiments',
+    description='Set of routine functionalities for neuroscience experiments and analysis',
     long_description=readme(),
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3.7',
-        'Topic :: Cognitive Neuroscience :: Psychophysics',
+        'Programming Language :: Python :: 3.11',
+        'Topic :: Neuroscience :: Psychophysics',
         ],
     keywords='Vision, Psychophysics, Neuroscience, Experiments, Python',
     url='http://github.com/sh4r11f/daedalus',
@@ -31,9 +31,9 @@ setup(
     packages=[
         'daedalus'
         ],
-    install_requires=[
-        'psychopy',
-        ],
+    # install_requires=[
+    #     'psychopy',
+    #     ],
     test_suite='nose.collector',
     tests_require=[
         'nose'

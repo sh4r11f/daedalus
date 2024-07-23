@@ -70,6 +70,74 @@ def lose_signal(rewards: Union[np.array, list]) -> np.array:
     return 1 - np.array(rewards[:-1])
 
 
+def stay_and_win_signal(choices: Union[np.array, list], rewards: Union[np.array, list]) -> np.array:
+    """
+    Computes the "stay and win" signal from choices and rewards
+
+    Args:
+        choices: input choices (list or np.array)
+        rewards: input rewards (list or np.array)
+
+    Returns:
+        stay_and_win: np.array
+    """
+    stay = stay_signal(choices)
+    win = win_signal(rewards)
+
+    return np.logical_and(stay, win).astype(int)
+
+
+def stay_and_lose_signal(choices: Union[np.array, list], rewards: Union[np.array, list]) -> np.array:
+    """
+    Computes the "stay and lose" signal from choices and rewards
+
+    Args:
+        choices: input choices (list or np.array)
+        rewards: input rewards (list or np.array)
+
+    Returns:
+        stay_and_lose: np.array
+    """
+    stay = stay_signal(choices)
+    lose = lose_signal(rewards)
+
+    return np.logical_and(stay, lose).astype(int)
+
+
+def switch_and_win_signal(choices: Union[np.array, list], rewards: Union[np.array, list]) -> np.array:
+    """
+    Computes the "switch and win" signal from choices and rewards
+
+    Args:
+        choices: input choices (list or np.array)
+        rewards: input rewards (list or np.array)
+
+    Returns:
+        switch_and_win: np.array
+    """
+    switch = switch_signal(choices)
+    win = win_signal(rewards)
+
+    return np.logical_and(switch, win).astype(int)
+
+
+def switch_and_lose_signal(choices: Union[np.array, list], rewards: Union[np.array, list]) -> np.array:
+    """
+    Computes the "switch and lose" signal from choices and rewards
+
+    Args:
+        choices: input choices (list or np.array)
+        rewards: input rewards (list or np.array)
+
+    Returns:
+        switch_and_lose: np.array
+    """
+    switch = switch_signal(choices)
+    lose = lose_signal(rewards)
+
+    return np.logical_and(switch, lose).astype(int)
+
+
 def handle_bad_probs(prob: float) -> float:
     """
     Handles bad values for probabilities

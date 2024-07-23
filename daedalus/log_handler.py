@@ -38,14 +38,8 @@ class DaedalusLogger(logging.Logger):
         super().__init__(name)
         self.enable_debug = enable_debug
 
-        # Create a logger
-        # if self.enable_debug:
-        #     self.setLevel(logging.DEBUG)
-        # else:
-        #     self.setLevel(logging.INFO)
-
         # Add handlers
-        if log_file:
+        if log_file is not None:
             self.add_file_handler(log_file)
         self.add_console_handler()
 

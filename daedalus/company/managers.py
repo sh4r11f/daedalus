@@ -19,6 +19,8 @@
 #
 # =================================================================================================== #
 from pathlib import Path
+import shutil
+
 from daedalus import utils
 
 
@@ -27,11 +29,16 @@ class BaseManager:
     BaseManager class to handle base operations for the vision module
     """
     def __init__(self, **kwargs):
-        self.name = kwargs.get("name")
+
+        self._all = []
+        for key, val in kwargs.items():
+            setattr(self, key.lower(), val)
+            self._all.append(key)
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
             setattr(self, key, val)
+            self._all.append(key)
 
     def get(self, name):
         """
@@ -46,6 +53,10 @@ class BaseManager:
         for attr in dir(self):
             if name in attr:
                 return getattr(self, name)
+
+    def show(self):
+        for att in self._all:
+            print(att)
 
 
 class FileManager(BaseManager):
@@ -70,8 +81,15 @@ class FileManager(BaseManager):
     def add(self, **kwargs):
         for key, val in kwargs.items():
             val = Path(val)
+            setattr(self, key, val)
+            self._all.append(key)
+
+    def make(self, **kwargs):
+        for key, val in kwargs.items():
+            val = Path(val)
             if val.exists():
                 self._make_backup(val)
+            val.touch()
             setattr(self, key, val)
 
 
@@ -84,49 +102,63 @@ class DirectoryManager(BaseManager):
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
+            if val is not None:
+                val = Path(val)
+                setattr(self, key, val)
+                self._all.append(key)
+
+    def make(self, **kwargs):
+        for key, val in kwargs.items():
             val = Path(val)
             if not val.exists():
                 val.mkdir(parents=True, exist_ok=True)
             setattr(self, key, val)
 
+    def empty(self, *args):
+        for name in args:
+            path_ = getattr(self, name)
+            path_ = Path(path_)
+            if not path_.is_dir():
+                raise ValueError(f"The provided path {path_.name} is not a directory.")
 
-class SettingsManager:
+            for item in path_.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+
+class SettingsManager(BaseManager):
     """
     Class to handle settings and parameters
 
     Args:
-        config_dir (str): Directory for the configuration files
-        version (str): Version of the module
         platform (str): Platform for the module
     """
-    def __init__(self, root, platform, project_key="Study"):
+    def __init__(self, platform, **kwargs):
+        super().__init__(**kwargs)
 
-        # Setup
-        self.root = root
-        self.config_dir = self.root / "config"
+        self.platform = self.platforms[platform]
 
-        settings = utils.read_config(self.config_dir / "settings.yaml")
-        self.settings = settings
-        self.main = settings[project_key]
-        self.platform = settings["Platforms"][platform]
+    def add(self, **config):
+        """
+        Add a configurations to the settings manager
+        """
+        for key, val in config.items():
+            setattr(self, key, val)
+            self._all.append(key)
 
-        self.version = self.main["Version"]
-
-    def load_config(self, name):
+    def load(self, name, file_path):
         """
         Load a configuration file
 
         Args:
-            config_file (str): The configuration file to load
+            name (str): The name of the configuration file
+            file_path (str): The path to the configuration file
         """
-        return utils.read_config(self.config_dir / f"{name}.yaml")
-
-    def add(self, *args):
-        """
-        Add a configuration file to the settings manager
-        """
-        for name in args:
-            setattr(self, name, self.load_config(name))
+        conf = utils.read_config(file_path)
+        setattr(self, name, conf)
+        self._all.append(name)
 
 
 class DataManager(BaseManager):
@@ -144,15 +176,19 @@ class SessionManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.data = DataManager()
-
+        self.id = kwargs.get("id")
+        if self.id is not None:
+            self.id = int(self.id)
+            self.name = f"ses-{int(self.id):02d}"
 
 class SubjectManager(BaseManager):
     """
     SubjectManager class to handle subject operations
     """
-    def __init__(self, sessions, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        for ses in sessions:
-            setattr(self, ses, SessionManager())
+        self.id = kwargs.get("id")
+        if self.id is not None:
+            self.id = int(self.id)
+            self.name = f"sub-{int(self.id):02d}"
