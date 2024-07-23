@@ -29,9 +29,11 @@ class BaseManager:
     BaseManager class to handle base operations for the vision module
     """
     def __init__(self, **kwargs):
-        self.name = kwargs.get("name")
-        self.num = kwargs.get("num")
+
         self._all = []
+        for key, val in kwargs.items():
+            setattr(self, key.lower(), val)
+            self._all.append(key)
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
@@ -125,45 +127,37 @@ class DirectoryManager(BaseManager):
                     item.unlink()
 
 
-class SettingsManager:
+class SettingsManager(BaseManager):
     """
     Class to handle settings and parameters
 
     Args:
-        config_dir (str): Directory for the configuration files
-        version (str): Version of the module
         platform (str): Platform for the module
     """
-    def __init__(self, root, platform, project_key="Study"):
+    def __init__(self, platform, **kwargs):
+        super().__init__(**kwargs)
 
-        # Setup
-        self.root = root
-        self.config_dir = self.root / "config"
+        self.platform = self.platforms[platform]
 
-        settings = utils.read_config(self.config_dir / "settings.yaml")
-        self.settings = settings
-        self.main = settings[project_key]
-        self.platform = settings["Platforms"][platform]
+    def add(self, **config):
+        """
+        Add a configurations to the settings manager
+        """
+        for key, val in config.items():
+            setattr(self, key, val)
+            self._all.append(key)
 
-        self.version = self.main["Version"]
-        self._all = []
-
-    def load_config(self, name):
+    def load(self, name, file_path):
         """
         Load a configuration file
 
         Args:
-            config_file (str): The configuration file to load
+            name (str): The name of the configuration file
+            file_path (str): The path to the configuration file
         """
-        return utils.read_config(self.config_dir / f"{name}.yaml")
-
-    def add(self, *args):
-        """
-        Add a configuration file to the settings manager
-        """
-        for name in args:
-            setattr(self, name, self.load_config(name))
-            self._all.append(name)
+        conf = utils.read_config(file_path)
+        setattr(self, name, conf)
+        self._all.append(name)
 
 
 class DataManager(BaseManager):
