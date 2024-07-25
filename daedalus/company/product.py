@@ -65,7 +65,6 @@ class Study:
         self.folders.add(
             data=self.sett.platform["Directories"].get("data"),
             tools=self.sett.platform["Directories"].get("tools"),
-            fonts=self.sett.platform["Directories"].get("fonts"),
             )
         self.folders.make(
             log=self.root / "log" / self.ver,

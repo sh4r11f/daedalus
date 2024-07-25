@@ -102,9 +102,10 @@ class DirectoryManager(BaseManager):
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
-            val = Path(val)
-            setattr(self, key, val)
-            self._all.append(key)
+            if val is not None:
+                val = Path(val)
+                setattr(self, key, val)
+                self._all.append(key)
 
     def make(self, **kwargs):
         for key, val in kwargs.items():
@@ -175,6 +176,10 @@ class SessionManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.id = kwargs.get("id")
+        if self.id is not None:
+            self.id = int(self.id)
+            self.name = f"ses-{int(self.id):02d}"
 
 class SubjectManager(BaseManager):
     """
@@ -182,3 +187,8 @@ class SubjectManager(BaseManager):
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.id = kwargs.get("id")
+        if self.id is not None:
+            self.id = int(self.id)
+            self.name = f"sub-{int(self.id):02d}"

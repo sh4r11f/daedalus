@@ -74,8 +74,7 @@ class VanillaDecay(Agent):
 
     def update(self, action, reward):
         """
-        Update the Q-value for the given state-action pair based on the reward received and the maximum Q-value for the
-        next state.
+        Update the Q-value to decay the unchosen option.
 
         Args:
             action (int): action chosen by the agent
