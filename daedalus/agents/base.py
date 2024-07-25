@@ -59,8 +59,15 @@ class BaseGent:
 
     @params.setter
     def params(self, values):
+        n_vals = len(values)
+        n_params = len(self._params)
+        if n_vals != n_params:
+            err = f"Number of parameters {n_params} does not match the number of values {n_vals}."
+            err += f"\nParameters: {self._params}\nValues: {values}"
+            raise ValueError(err)
+
         for i, value in enumerate(values):
-            if self._params[i][0] != "bias":
+            if self._params[i][0] not in ["sigma", "bias"]:
                 value = 1 / (1 + np.exp(-value))
             # value = np.clip(value, float(self.bounds[i][1][0]), float(self.bounds[i][1][1]))
             self._params[i][1] = value
