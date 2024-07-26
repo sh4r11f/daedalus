@@ -9,7 +9,7 @@
 #               DESCRIPTION: Agemts with decay rates
 #
 #
-#                      RULE: 
+#                      RULE: DAYW
 #
 #
 #
