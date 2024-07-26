@@ -213,9 +213,6 @@ class Agent(BaseGent):
             # Unpack the trial
             action, _, reward = trial
 
-            # Update the Q-values
-            self.update(action, reward)
-
             # Compute the choice probabilities
             probs = self.get_choice_probs()
 
@@ -225,5 +222,8 @@ class Agent(BaseGent):
 
             # Update the log-likelihood
             nll -= log_like
+
+            # Update the Q-values
+            self.update(action, reward)
 
         return nll

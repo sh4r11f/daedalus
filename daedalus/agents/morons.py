@@ -182,13 +182,9 @@ class HybridRewUnrew(RewUnrew):
         # Update the Q-values
         if reward == 1:
             self.kiyoo[action] = self.kiyoo[action] + self.alpha * (1 - self.kiyoo[action])
-        else:
-            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
-
-        # Update the feature values
-        if reward == 1:
             self.vee[feature] = self.vee[feature] + self.alpha * (1 - self.vee[feature])
         else:
+            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
             self.vee[feature] = self.vee[feature] - self.alpha_unr * self.vee[feature]
 
     def reset(self):
@@ -260,9 +256,6 @@ class HybridRewUnrew(RewUnrew):
             # Unpack the trial
             action, feature, reward = trial
 
-            # Update the Q-values
-            self.update(action, feature, reward)
-
             # Get the feature on the left
             left_feat = feature if action == 0 else 1 - feature
 
@@ -273,6 +266,9 @@ class HybridRewUnrew(RewUnrew):
             log_like = np.log(probs[action] + 1e-10)
             self.hoods.append(log_like)
             nll -= log_like
+
+            # Update the Q-values
+            self.update(action, feature, reward)
 
         return nll
 
@@ -305,7 +301,6 @@ class HybridRewUnrewDecay(HybridRewUnrew):
         # Decay the unchosen action and feature
         self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * self.kiyoo[1 - action]
         self.vee[1 - feature] = self.vee[1 - feature] - self.decay * self.vee[1 - feature]
-
 
 
 class HybridRewUnrewDecayPicky(HybridRewUnrew):
@@ -447,7 +442,7 @@ class HybridRewUnrewNomega(RewUnrew):
 
         # Compute the probabilities
         logits = (1 / self.sigma) * q_diff + self.bias
-        probs[0]= self.sigmoid(logits)
+        probs[0] = self.sigmoid(logits)
         probs[1] = 1 - probs[0]
 
         return probs
@@ -470,9 +465,6 @@ class HybridRewUnrewNomega(RewUnrew):
             # Unpack the trial
             action, feature, reward = trial
 
-            # Update the Q-values
-            self.update(action, feature, reward)
-
             # Get the feature on the left
             left_feat = feature if action == 0 else 1 - feature
 
@@ -483,6 +475,9 @@ class HybridRewUnrewNomega(RewUnrew):
             log_like = np.log(probs[action] + 1e-10)
             self.hoods.append(log_like)
             nll -= log_like
+
+            # Update the Q-values
+            self.update(action, feature, reward)
 
         return nll
 

@@ -94,15 +94,15 @@ class ObjectBased(BaseGent):
             # unchosen = (1 - action) * 2 + (1 - feature)
             # options = [chosen, unchosen]
 
-            # Update the value
-            self.update(choice, reward)
-
             # Calculate the loss
             probs = self.get_choice_probs(options)
             log_like = np.log(probs[action] + 1e-10)
             self.hoods.append(log_like)
 
             nll -= log_like
+
+            # Update the value
+            self.update(choice, reward)
 
         return nll
 
