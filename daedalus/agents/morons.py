@@ -94,7 +94,7 @@ class RewUnrew(Agent):
     Args:
         name (str): name of the agent
         alpha (float): learning rate
-        alpha_genuius (float): the genius learning rate for unchosen actions
+        alpha_unr (float): the genius learning rate for unchosen actions
         sigma (float): standard deviation of the Gaussian noise
         bias (float): bias
     """

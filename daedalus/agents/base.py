@@ -28,7 +28,7 @@ class BaseGent:
         alpha (float): learning rate
         n_actions (int): number of actions
     """
-    def __init__(self, name, n_actions, n_states, alpha=0.5, **kwargs):
+    def __init__(self, name, n_actions, n_states, alpha=0.5, sigma=1, bias=0.1, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
@@ -37,8 +37,20 @@ class BaseGent:
         self.n_actions = n_actions
         self.n_states = n_states
         self.alpha = alpha
-        self._params = [["alpha", self.alpha]]
-        self.bounds = kwargs.get("alpha_bounds", [("alpha", (1e-5, 1))])
+        self.sigma = sigma
+        self.bias = bias
+
+        # Set the bounds
+        self._params = [
+            ["alpha", self.alpha],
+            ["sigma", self.sigma],
+            ["bias", self.bias],
+            ]
+        self.bounds = [
+            kwargs.get("alpha_bounds", ("alpha", (1e-5, 1))),
+            kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))),
+            kwargs.get("bias_bounds", ("bias", (-1e10, 1e10))),
+            ]
 
         # Get/initialize parameters
         # self.kiyoo = np.zeros((self.n_states, self.n_actions))
@@ -125,21 +137,14 @@ class Agent(BaseGent):
         alpha (float): learning rate
         n_actions (int): number of actions
     """
-    def __init__(self, name, sigma=1, bias=0.1, **kwargs):
+    def __init__(self, name, **kwargs):
         """
         Initialize the Q-learning agent with the learning rate (alpha), discount factor (gamma),
         number of states, number of actions, and the exploration rate (epsilon).
         """
         # Initialize the agent
         super().__init__(name, n_actions=2, n_states=1, **kwargs)
-        # self.kiyoo = np.zeros(self.n_actions)
-        self.sigma = sigma
-        self.bias = bias
-        self._params.extend([["sigma", self.sigma], ["bias", self.bias]])
-
-        # Set the bounds
-        self.bounds.append(kwargs.get("sigma_bounds", ("sigma", (1e-5, 1))))
-        self.bounds.append(kwargs.get("bias_bounds", ("bias", (-np.inf, np.inf))))
+        self.kiyoo = np.zeros(self.n_actions)
 
     def reset(self):
         """
@@ -212,6 +217,7 @@ class Agent(BaseGent):
 
             # Unpack the trial
             action, _, reward = trial
+            action, reward = int(action), int(reward)
 
             # Compute the choice probabilities
             probs = self.get_choice_probs()

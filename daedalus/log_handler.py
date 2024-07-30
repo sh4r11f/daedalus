@@ -111,19 +111,19 @@ class DaedalusLogger(logging.Logger):
         Adds a console handler to the logger.
         """
         # Create handler
-        hand = logging.StreamHandler()
+        cons = logging.StreamHandler()
 
         # Set level
         # level = logging.DEBUG if self.enable_debug else logging.WARNING
         level = logging.DEBUG
-        hand.setLevel(level)
+        cons.setLevel(level)
 
         # Create formatters and add it to handlers
         fmter = CustomFormatter("conosle", level)
-        hand.setFormatter(fmter)
+        cons.setFormatter(fmter)
 
         # Add handlers to the logger
-        self.addHandler(hand)
+        self.addHandler(cons)
 
     def show_handler_info(self):
         """

@@ -58,7 +58,7 @@ class Tailor:
         self.results = []
         self.simulations = []
         self.trained = False
-        self.agent.reset()
+        self._agent.reset()
 
     def fit(self, data, n_epochs=10, method="Nelder-Mead", bounded=False, verbose=False):
         """

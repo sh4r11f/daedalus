@@ -119,7 +119,7 @@ class DirectoryManager(BaseManager):
             path_ = getattr(self, name)
             path_ = Path(path_)
             if not path_.is_dir():
-                raise ValueError(f"The provided path {path_.name} is not a directory.")
+                raise ValueError(f"The provided path {path_.name} doesn't exist.")
 
             for item in path_.iterdir():
                 if item.is_dir():
@@ -135,20 +135,10 @@ class SettingsManager(BaseManager):
     Args:
         platform (str): Platform for the module
     """
-    def __init__(self, platform, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.platform = self.platforms[platform]
-
-    def add(self, **config):
-        """
-        Add a configurations to the settings manager
-        """
-        for key, val in config.items():
-            setattr(self, key, val)
-            self._all.append(key)
-
-    def load(self, name, file_path):
+    def load_from_file(self, name, file_path):
         """
         Load a configuration file
 
