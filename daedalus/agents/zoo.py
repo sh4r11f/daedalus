@@ -9,7 +9,7 @@
 #                   DESCRIPTION: Model zoo
 #
 #
-#                          RULE: 
+#                          RULE: Import and use
 #
 #
 #
@@ -19,6 +19,8 @@
 #
 # =================================================================================================== #
 import numpy as np
+import random
+
 from .base import BaseGent, Agent
 
 
@@ -327,7 +329,7 @@ class Hybrid(ActionBased):
 
         # Compute the probabilities
         logits = (1 / self.sigma) * diff + self.bias
-        probs[0]= self.sigmoid(logits)
+        probs[0] = self.sigmoid(logits)
         probs[1] = 1 - probs[0]
 
         return probs
@@ -429,7 +431,7 @@ class HybridCoupled(Hybrid):
 class ObjectBased(BaseGent):
     def __init__(self, name, alpha_unr=0.5, **kwargs):
         super().__init__(name, n_actions=4, n_states=1, **kwargs)
-        
+
         self.kiyoo = np.zeros(self.n_actions)
         self.alpha_unr = alpha_unr
         self._params.append(["alpha_unr", self.alpha_unr])
@@ -487,9 +489,23 @@ class ObjectBased(BaseGent):
             action, feature, reward = int(action), int(feature), int(reward)
 
             # Find object number
-            chosen = action * 2 + feature
-            unchosen = 3 - chosen
-            options = [chosen, unchosen]
+            # chosen = action * 2 + feature
+            # unchosen = 3 - chosen
+            # options = [chosen, unchosen] if action == 0 else [unchosen, chosen]
+            if action == 0:
+                if feature == 0:
+                    options = [0, 3]
+                    choice = 0
+                else:
+                    options = [1, 2]
+                    choice = 1
+            else:
+                if feature == 0:
+                    options = [1, 2]
+                    choice = 2
+                else:
+                    options = [0, 3]
+                    choice = 3
 
             # Calculate the loss
             probs = self.get_choice_probs(options)
