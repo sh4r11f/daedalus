@@ -455,7 +455,7 @@ class ObjectBased(BaseGent):
         else:
             self.kiyoo[obj] = self.kiyoo[obj] - self.alpha_unr * self.kiyoo[obj]
 
-    def choose_action(self, options):
+    def choose(self, options):
         probs = self.get_choice_probs(options)
         return options[0] if random.random() < probs[0] else options[1]
 
@@ -559,3 +559,90 @@ class ObjectBasedCoupled(ObjectBased):
         else:
             self.kiyoo[obj] = self.kiyoo[obj] - self.alpha_unr * self.kiyoo[obj]
             self.kiyoo[3 - obj] = self.kiyoo[3 - obj] + self.alpha_unr * (1 - self.kiyoo[3 - obj])
+
+
+class HybridX(Hybrid):
+    """
+    Hybrid learning with feature-based learning with no sigma or bias.
+    """
+    def __init__(self, name, **kwargs):
+        super().__init__(name, **kwargs)
+
+    def get_choice_probs(self, left_feat):
+        """
+        Compute the choice probabilities.
+        """
+        probs = np.zeros(2)
+
+        # Compute the difference in Q-values
+        act_diff = self.kiyoo[0] - self.kiyoo[1]
+        feat_diff = self.vee[left_feat] - self.vee[1 - left_feat]
+
+        # Compute the weighted logits
+        logits = (1 - self.omega) * act_diff + self.omega * feat_diff
+
+        # Compute the probabilities
+        probs[0] = self.sigmoid(logits)
+        probs[1] = 1 - probs[0]
+
+        return probs
+
+
+class HybridDecayX(HybridX):
+    """
+    Hybrid learning with feature-based learning with no sigma or bias.
+    """
+    def __init__(self, name, decay=0.5, **kwargs):
+        super().__init__(name, **kwargs)
+
+        self.decay = decay
+        self._params.append(["decay", self.decay])
+        self.bounds.append(kwargs.get("decay_bounds", ("decay", (1e-5, 1))))
+
+    def update(self, action, feature, reward):
+        """
+        Update the value for a given feature and reward.
+
+        Args:
+            action (int): action chosen by the agent
+            feature (int): feature chosen by the agent
+            reward (float): reward received from the environment
+        """
+        # Update the Q-values for rewarded actions
+        super().update(action, feature, reward)
+
+        # Decay the unchosen action
+        self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.decay * (self.kiyoo[1 - action] - 0.5)
+
+        # Decay the unchosen feature
+        self.vee[1 - feature] = self.vee[1 - feature] - self.decay * (self.vee[1 - feature] - 0.5)
+
+
+class HybridCoupledX(HybridX):
+    """
+    Hybrid learning with feature-based learning with no sigma or bias.
+    """
+    def __init__(self, name, **kwargs):
+        super().__init__(name, **kwargs)
+
+    def update(self, action, feature, reward):
+        """
+        Update the value for a given feature and reward.
+
+        Args:
+            action (int): action chosen by the agent
+            feature (int): feature chosen by the agent
+            reward (float): reward received from the environment
+        """
+        if reward == 1:
+            self.kiyoo[action] = self.kiyoo[action] + self.alpha * (1 - self.kiyoo[action])
+            self.kiyoo[1 - action] = self.kiyoo[1 - action] - self.alpha * self.kiyoo[1 - action]
+
+            self.vee[feature] = self.vee[feature] + self.alpha * (1 - self.vee[feature])
+            self.vee[1 - feature] = self.vee[1 - feature] - self.alpha * self.vee[1 - feature]
+        else:
+            self.kiyoo[action] = self.kiyoo[action] - self.alpha_unr * self.kiyoo[action]
+            self.kiyoo[1 - action] = self.kiyoo[1 - action] + self.alpha_unr * (1 - self.kiyoo[1 - action])
+
+            self.vee[feature] = self.vee[feature] - self.alpha_unr * self.vee[feature]
+            self.vee[1 - feature] = self.vee[1 - feature] + self.alpha_unr * (1 - self.vee[1 - feature])

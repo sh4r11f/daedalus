@@ -43,7 +43,7 @@ class ObjectBased(BaseGent):
     def update(self, action, reward):
         self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
 
-    def choose_action(self, options):
+    def choose(self, options):
         probs = self.get_choice_probs(options)
         return options[0] if random.random() < probs[0] else options[1]
 

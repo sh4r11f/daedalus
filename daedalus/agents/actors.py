@@ -224,7 +224,7 @@ class Tailor:
 
             # Simulate the agent
             for trial in sample:
-                action = self._agent.choose_action()
+                action = self._agent.choose()
                 reward = trial[action]
                 self._agent.update(action, reward)
 
@@ -312,7 +312,7 @@ class Coach(Tailor):
     def __init__(self, agent=None):
         super().__init__(agent)
 
-    def exam(self, data, params, n_episodes=10, n_samples=None, sample_strategy="random"):
+    def exam(self, data, params, n_episodes=10, n_samples=None, sample_strategy="consecutive"):
         """
         Simulate the agent for a specified number of episodes.
         """
@@ -334,7 +334,7 @@ class Coach(Tailor):
 
             # Simulate the agent
             for cor_act, cor_feat, feat_left, rew in sample:
-                action_choice, feature_choice = self._agent.choose_action(feat_left)
+                action_choice, feature_choice = self._agent.choose(feat_left)
                 if action_choice == cor_act and feature_choice == cor_feat:
                     reward = rew
                 else:

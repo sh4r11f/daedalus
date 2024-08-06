@@ -169,7 +169,7 @@ class Agent(BaseGent):
         # Update the Q-values
         self.kiyoo[action] = self.kiyoo[action] + self.alpha * (reward - self.kiyoo[action])
 
-    def choose_action(self):
+    def choose(self):
         """
         Chooses an action based on the current state.
 

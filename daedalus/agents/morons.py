@@ -208,7 +208,7 @@ class HybridRewUnrew(RewUnrew):
     def right_option_value(self, left_feat):
         return (1 - self.omega) * self.kiyoo[1] + self.omega * self.vee[1 - left_feat]
 
-    def choose_action(self, left_feat):
+    def choose(self, left_feat):
         """
         Chooses an action based on the current state.
 
@@ -233,7 +233,7 @@ class HybridRewUnrew(RewUnrew):
 
         # Compute the probabilities
         logits = (1 / self.sigma) * q_diff + self.bias
-        probs[0]= self.sigmoid(logits)
+        probs[0] = self.sigmoid(logits)
         probs[1] = 1 - probs[0]
 
         return probs
@@ -417,7 +417,7 @@ class HybridRewUnrewNomega(RewUnrew):
     def right_option_value(self, left_feat):
         return (1 - self.omega) * self.kiyoo[1] + self.omega * self.vee[1 - left_feat]
 
-    def choose_action(self, left_feat):
+    def choose(self, left_feat):
         """
         Chooses an action based on the current state.
 
