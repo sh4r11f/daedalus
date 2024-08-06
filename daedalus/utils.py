@@ -22,8 +22,10 @@ import yaml
 import json
 from pathlib import Path
 
-import numpy as np
+import matplotlib.font_manager as fm
+import seaborn as sns
 
+import numpy as np
 from scipy import stats
 
 
@@ -118,9 +120,6 @@ def set_plotting_style(theme_params, rc_params, font_dir=None):
         rc_params (dict): The parameters for the rc (run command) settings.
         font_dir (str): The directory where the font is located.
     """
-    import matplotlib.font_manager as fm
-    import seaborn as sns
-
     if font_dir is not None:
         add_font(theme_params["font_name"], font_dir)
     sns.set_them(**theme_params, rc=rc_params)
@@ -134,9 +133,6 @@ def add_font(font_name: str, font_dir: str):
         font_name (str): The name of the font to add.
         font_dir (str): The directory where the font is located.
     """
-    import matplotlib.font_manager as fm
-    import seaborn as sns
-
     font_files = list(Path(font_dir).glob(f"*{font_name}*"))
     for font_file in font_files:
         fm.fontManager.addfont(str(font_file))
@@ -222,20 +218,63 @@ def rotate_point(x, y, theta):
     return x_rot, y_rot
 
 
-def mat2cart(x, y, width, height):
+def mat2cart(row, col, scr_width, scr_height):
     """
     Convert the x, y coordinates from matrix to cartesian.
 
     Args:
-        x (int): The x coordinate.
-        y (int): The y coordinate.
-        width (int): The width of the matrix.
-        height (int): The height of the matrix.
+        row (int): The row index.
+        col (int): The column index.
+        scr_width (int): The screen width.
+        scr_height (int): The screen height.
 
     Returns:
         tuple: The cartesian x, y coordinates.
     """
-    return x - width // 2, height // 2 - y
+    x = col - scr_width / 2
+    y = -row + scr_height / 2
+
+    return x, y
+
+
+def scr2cart(x, y, scr_width, scr_height):
+    """
+    Convert screen coordinates to Cartesian coordinates with (0, 0) in the center of the screen.
+
+    Args:
+        x (int): The x-coordinate in screen coordinates.
+        y (int): The y-coordinate in screen coordinates.
+        scr_width (int): The width of the screen in pixels. Default is 1920.
+        scr_height (int): The height of the screen in pixels. Default is 1080.
+
+    Returns:
+        (int, int): The Cartesian coordinates (x_cartesian, y_cartesian).
+    """
+    center_x = scr_width // 2
+    center_y = scr_height // 2
+
+    x_cartesian = x - center_x
+    y_cartesian = center_y - y
+
+    return x_cartesian, y_cartesian
+
+
+def px2dva(x_pixels, y_pixels, ppd):
+    """
+    Convert pixel coordinates to degrees of visual angle.
+
+    Args:
+        x_pixels (int): The x-coordinate in pixels.
+        y_pixels (int): The y-coordinate in pixels.
+        ppd (float): The pixels per degree value of the monitor.
+
+    Returns:
+        (float, float): The coordinates in degrees of visual angle (x_degrees, y_degrees).
+    """
+    x_degrees = x_pixels / ppd
+    y_degrees = y_pixels / ppd
+
+    return x_degrees, y_degrees
 
 
 def nancorr(x, y):
