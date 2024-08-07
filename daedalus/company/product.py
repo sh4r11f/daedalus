@@ -25,6 +25,7 @@ from .managers import (
     FileManager, DirectoryManager, SettingsManager,
     DataManager, SubjectManager, SessionManager
 )
+from daedalus.log_handler import DaedalusLogger
 
 
 class Study:
@@ -53,7 +54,7 @@ class Study:
         ver (str): Alias for version
         data (DataManager): Data manager
     """
-    def __init__(self, name, root, platform, subject, session, debug=False):
+    def __init__(self, name, root, platform, debug=False):
 
         # Setup
         self.name = name
@@ -62,42 +63,56 @@ class Study:
         self.debug = debug
 
         # Subject and session manager
-        sub = int(subject)
-        ses = int(session)
-        self.sub = SubjectManager(id=sub, name=f"sub-{sub:02d}")
-        self.ses = SessionManager(id=ses, name=f"ses-{ses:02d}")
+        self.sub_lord = SubjectManager()
+        self.ses_lord = SessionManager()
 
         # Folders and files
-        self.folders = DirectoryManager(home=self.root, config=self.root / "config")
-        config_files = {f.stem: f for f in self.folders.config.glob("*.yaml")}
-        self.files = FileManager(**config_files)
+        self.folder_lord = DirectoryManager(home=self.root, config=self.root / "config")
+        config_files = {f.stem: f for f in self.folder_lord.config.glob("*.yaml")}
+        self.file_lord = FileManager(**config_files)
 
         # Settings
-        settings = utils.read_config(self.files.settings)
-        self.settings = SettingsManager(
+        settings = utils.read_config(self.file_lord.settings)
+        self.setting_lord = SettingsManager(
             study=settings["Study"],
             platform=settings["Platforms"][self.platform]
             )
         for f, path in config_files.items():
-            self.settings.load_from_file(f, path)
-        self.version = f"v{self.settings.study['Version']}"
+            self.setting_lord.load_from_file(f, path)
+        self.version = f"v{self.setting_lord.study['Version']}"
 
         # Add folders from the settings file
-        self.folders.add(
-            data=self.settings.platform["Directories"].get("data"),
-            tools=self.settings.platform["Directories"].get("tools"),
+        self.folder_lord.add(
+            data=self.setting_lord.platform["Directories"].get("data"),
+            tools=self.setting_lord.platform["Directories"].get("tools"),
             )
 
         # Data
-        self.data = DataManager()
+        self.data_lord = DataManager()
+
+    @property
+    def folders(self):
+        return self.folder_lord
+
+    @property
+    def files(self):
+        return self.file_lord
+
+    @property
+    def sub(self):
+        return self.sub_lord
+
+    @property
+    def ses(self):
+        return self.ses_lord
 
     @property
     def sett(self):
-        return self.settings
+        return self.setting_lord
 
     @property
-    def ver(self):
-        return self.version
+    def data(self):
+        return self.data_lord
 
     def __repr__(self):
         return f"{self.name} ({self.platform})"
