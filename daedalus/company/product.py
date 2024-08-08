@@ -6,16 +6,16 @@
 #                        SCRIPT: product.py
 #
 #
-#               DESCRIPTION: A project 
+#                   DESCRIPTION: Class for studies, projects, experiments, etc.
 #
 #
-#                           RULE: DAYW
+#                          RULE: DAYW
 #
 #
 #
-#                      CREATOR: Sharif Saleki
-#                            TIME: 07-16-2024-7810598105114117
-#                          SPACE: Dartmouth College, Hanover, NH
+#                       CREATOR: Sharif Saleki
+#                          TIME: 07-16-2024-7810598105114117
+#                         SPACE: Dartmouth College, Hanover, NH
 #
 # =================================================================================================== #
 from pathlib import Path
@@ -36,22 +36,18 @@ class Study:
         name (str): The name of the project
         root (str): The root directory for the project
         platform (str): The platform used for the project
-        subject (int): The subject ID
-        session (int): The session ID
-        **kwargs: Additional keyword arguments
+        debug (bool): Whether to enable debug mode
 
     Attributes:
         name (str): The name of the project
         root (str): The root directory for the project
         platform (str): The platform used for the project
-        sub (SubjectManager): Subject manager
-        ses (SessionManager): Session manager
-        folders (DirectoryManager): Directory manager
-        files (FileManager): File manager
-        settings (SettingsManager): Settings manager
+        sub_lord (SubjectManager): Subject manager
+        ses_lord (SessionManager): Session manager
+        dir_lord (DirectoryManager): Directory manager
+        file_lord (FileManager): File manager
+        setting_lord (SettingsManager): Settings manager
         version (str): The version of the study
-        sett (SettingsManager): Alias for settings
-        ver (str): Alias for version
         data (DataManager): Data manager
     """
     def __init__(self, name, root, platform, debug=False):
@@ -63,56 +59,48 @@ class Study:
         self.debug = debug
 
         # Subject and session manager
-        self.sub_lord = SubjectManager()
-        self.ses_lord = SessionManager()
+        self.sub = SubjectManager()
+        self.ses = SessionManager()
 
-        # Folders and files
-        self.folder_lord = DirectoryManager(home=self.root, config=self.root / "config")
-        config_files = {f.stem: f for f in self.folder_lord.config.glob("*.yaml")}
-        self.file_lord = FileManager(**config_files)
+        # Folders
+        self.folders = DirectoryManager(home=self.root, config=self.root / "config")
+
+        # Files
+        config_files = {f.stem: f for f in self.folders.config.glob("*.yaml")}  # type: ignore
+        self.files = FileManager(**config_files)
 
         # Settings
-        settings = utils.read_config(self.file_lord.settings)
-        self.setting_lord = SettingsManager(
+        settings = utils.read_config(self.files.settings)  # type: ignore
+        self.settings = SettingsManager(
             study=settings["Study"],
             platform=settings["Platforms"][self.platform]
             )
-        for f, path in config_files.items():
-            self.setting_lord.load_from_file(f, path)
-        self.version = f"v{self.setting_lord.study['Version']}"
+        for f, path in self.files.iter_files():
+            self.settings.load_from_file(f, path)
 
-        # Add folders from the settings file
-        self.folder_lord.add(
-            data=self.setting_lord.platform["Directories"].get("data"),
-            tools=self.setting_lord.platform["Directories"].get("tools"),
-            )
+        self.settings.add(version=self.settings.study['Version'])  # type: ignore
+        self.settings.add(version_name=f"v{self.settings.version}")  # type: ignore
 
         # Data
-        self.data_lord = DataManager()
+        self.data = DataManager()
+        self.folders.add(data=Path(self.settings.platform["Directories"].get("data")))  # type: ignore
 
-    @property
-    def folders(self):
-        return self.folder_lord
+        # Logger
+        self.folders.add(log=self.root / "log" / self.settings.version_name)
+        self.logger = None
 
-    @property
-    def files(self):
-        return self.file_lord
+    def make_logger(self, logger_name, file_name):
+        """
+        Create a logger
 
-    @property
-    def sub(self):
-        return self.sub_lord
-
-    @property
-    def ses(self):
-        return self.ses_lord
-
-    @property
-    def sett(self):
-        return self.setting_lord
-
-    @property
-    def data(self):
-        return self.data_lord
+        Args:
+            logger_name (str): The name of the logger
+            file_name (str): The name of the log file
+        """
+        self.files.make(log=self.folders.log / f"{file_name}.log")  # type: ignore
+        self.logger = DaedalusLogger(
+            name=logger_name, log_file=self.files.log, debug_mode=self.debug  # type: ignore
+            )
 
     def __repr__(self):
         return f"{self.name} ({self.platform})"

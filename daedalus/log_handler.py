@@ -25,18 +25,19 @@ import traceback
 class DaedalusLogger(logging.Logger):
     """
     A class to create and configure a logger for Daedalus package.
-    """
-    def __init__(self, name, enable_debug=False, log_file=None):
-        """
-        Initialize the logger.
 
-        Args:
-            name (str): The name of the logger.
-            debug (bool): Whether to run in debug mode.
-            log_file (str): The path to the log file.
-        """
+    Args:
+        name (str): The name of the logger.
+        enable_debug (bool): Whether to run in debug mode.
+        log_file (str): The path to the
+
+    Attributes:
+        enable_debug (bool): Whether to run in debug mode
+    """
+    def __init__(self, name, log_file=None, debug_mode=False):
+
         super().__init__(name)
-        self.enable_debug = enable_debug
+        self.debug_mode = debug_mode
 
         # Add handlers
         if log_file is not None:
@@ -96,7 +97,10 @@ class DaedalusLogger(logging.Logger):
         hand = logging.FileHandler(log_file)
 
         # Set level
-        level = logging.DEBUG
+        if self.debug_mode:
+            level = logging.DEBUG
+        else:
+            level = logging.WARNING
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
@@ -114,8 +118,7 @@ class DaedalusLogger(logging.Logger):
         cons = logging.StreamHandler()
 
         # Set level
-        # level = logging.DEBUG if self.enable_debug else logging.WARNING
-        level = logging.DEBUG
+        level = logging.DEBUG if self.debug_mode else logging.WARNING
         cons.setLevel(level)
 
         # Create formatters and add it to handlers
@@ -210,6 +213,11 @@ logging.setLoggerClass(DaedalusLogger)
 class CustomFormatter(logging.Formatter):
     """
     Define a custom log formatter
+
+    Args:
+        logger_device (str): The device to log to (file or console)
+        logger_level (int): The level of logging
+        fmt (str): The format string for the log message
     """
     def __init__(self, logger_device, logger_level, fmt=None):
         if fmt is None:
@@ -241,16 +249,11 @@ class CustomFormatter(logging.Formatter):
         time = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
 
         # Create the formatted log message
-        log_msg = ""
-        if self.logger_device == "file":
-            log_msg += f"{time} | "
-        if self.logger_level == logging.DEBUG:
-            log_msg += f"@{function} | "
-        log_msg += f"{level} | "
+        log_msg = f"{time} | @{function} | {level} | {record.msg}"
         if hasattr(record, "block"):
-            log_msg += f"BLOCK {record.block} | "
+            log_msg += f"BLOCK {record.block} | " # type: ignore
         if hasattr(record, "trial"):
-            log_msg += f"TRIAL {record.trial} | "
+            log_msg += f"TRIAL {record.trial} | " # type: ignore
         log_msg += f"{record.msg}"
 
         return log_msg

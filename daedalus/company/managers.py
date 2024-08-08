@@ -37,6 +37,7 @@ class BaseManager:
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
+            key = key.lower()
             setattr(self, key, val)
             self._all.append(key)
 
@@ -50,6 +51,7 @@ class BaseManager:
         Returns:
             object: The object
         """
+        name = name.lower()
         for attr in dir(self):
             if name in attr:
                 return getattr(self, name)
@@ -78,14 +80,20 @@ class FileManager(BaseManager):
             backup.unlink()
         file.rename(backup)
 
+    def iter_files(self):
+        for file in self._all:
+            yield file, getattr(self, file)
+
     def add(self, **kwargs):
         for key, val in kwargs.items():
+            key = key.lower()
             val = Path(val)
             setattr(self, key, val)
             self._all.append(key)
 
     def make(self, **kwargs):
         for key, val in kwargs.items():
+            key = key.lower()
             val = Path(val)
             if val.exists():
                 self._make_backup(val)
@@ -102,20 +110,23 @@ class DirectoryManager(BaseManager):
 
     def add(self, **kwargs):
         for key, val in kwargs.items():
-            if val is not None:
-                val = Path(val)
-                setattr(self, key, val)
-                self._all.append(key)
+            key = key.lower()
+            val = Path(val)
+            setattr(self, key, val)
+            self._all.append(key)
 
     def make(self, **kwargs):
         for key, val in kwargs.items():
+            key = key.lower()
             val = Path(val)
             if not val.exists():
                 val.mkdir(parents=True, exist_ok=True)
             setattr(self, key, val)
+            self._all.append(key)
 
     def empty(self, *args):
         for name in args:
+            name = name.lower()
             path_ = getattr(self, name)
             path_ = Path(path_)
             if not path_.is_dir():
@@ -146,6 +157,7 @@ class SettingsManager(BaseManager):
             name (str): The name of the configuration file
             file_path (str): The path to the configuration file
         """
+        name = name.lower()
         conf = utils.read_config(file_path)
         setattr(self, name, conf)
         self._all.append(name)
@@ -166,10 +178,28 @@ class SessionManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.id = kwargs.get("id")
-        if self.id is not None:
-            self.id = int(self.id)
-            self.name = f"ses-{int(self.id):02d}"
+    def add(self, **kwargs):
+        for key, val in kwargs.items():
+            key = key.lower()
+            self._all.append(key)
+            setattr(self, key, val)
+            if key == "id":
+                name = self.get_name(val)
+                setattr(self, name, val)
+                self._all.append(name)
+
+    def get_name(self, ses_id):
+        """
+        Get the name of a session
+
+        Args:
+            ses_id (int): The session id
+
+        Returns:
+            str: The name of the session
+        """
+        return f"ses-{int(ses_id):02d}"
+
 
 class SubjectManager(BaseManager):
     """
@@ -178,7 +208,24 @@ class SubjectManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.id = kwargs.get("id")
-        if self.id is not None:
-            self.id = int(self.id)
-            self.name = f"sub-{int(self.id):02d}"
+    def add(self, **kwargs):
+        for key, val in kwargs.items():
+            key = key.lower()
+            setattr(self, key, val)
+            self._all.append(key)
+            if key == "id":
+                name = self.get_name(val)
+                setattr(self, name, val)
+                self._all.append(name)
+
+    def get_name(self, sub_id):
+        """
+        Get the name of a subject
+
+        Args:
+            sub_id (int): The subject id
+
+        Returns:
+            str: The name of the subject
+        """
+        return f"sub-{int(sub_id):02d}"
