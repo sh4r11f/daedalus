@@ -102,5 +102,6 @@ class Study:
             name=logger_name, log_file=self.files.log, debug_mode=self.debug  # type: ignore
             )
 
-    def __repr__(self):
-        return f"{self.name} ({self.platform})"
+    @property
+    def sett(self):
+        return self.settings

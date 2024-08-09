@@ -184,9 +184,8 @@ class SessionManager(BaseManager):
             self._all.append(key)
             setattr(self, key, val)
             if key == "id":
-                name = self.get_name(val)
-                setattr(self, name, val)
-                self._all.append(name)
+                self.name = self.get_name(val)
+                self._all.append("name")
 
     def get_name(self, ses_id):
         """
@@ -214,9 +213,8 @@ class SubjectManager(BaseManager):
             setattr(self, key, val)
             self._all.append(key)
             if key == "id":
-                name = self.get_name(val)
-                setattr(self, name, val)
-                self._all.append(name)
+                self.name = self.get_name(val)
+                self._all.append("name")
 
     def get_name(self, sub_id):
         """
