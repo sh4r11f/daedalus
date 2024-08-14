@@ -86,7 +86,7 @@ class Study:
         self.folders.add(data=Path(self.settings.platform["Directories"].get("data")))  # type: ignore
 
         # Logger
-        self.folders.add(log=self.root / "log" / self.settings.version_name)
+        self.folders.make(log=self.root / "log" / self.settings.version_name)
         self.logger = None
 
     def make_logger(self, logger_name, file_name):
@@ -97,10 +97,12 @@ class Study:
             logger_name (str): The name of the logger
             file_name (str): The name of the log file
         """
-        self.files.make(log=self.folders.log / f"{file_name}.log")  # type: ignore
-        self.logger = DaedalusLogger(
+        self.files.add(log=self.folders.log / file_name)  # type: ignore
+        logger = DaedalusLogger(
             name=logger_name, log_file=self.files.log, debug_mode=self.debug  # type: ignore
             )
+
+        return logger
 
     @property
     def sett(self):

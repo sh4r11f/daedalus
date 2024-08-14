@@ -170,6 +170,22 @@ class DataManager(BaseManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.dict = {}
+        self._all.append("dict")
+
+    def add_dict(self, key, data):
+        """
+        Add a dictionary of data
+
+        Args:
+            key (str): The key for the data
+            data (dict): The data to add
+        """
+        if key not in self.dict.keys():
+            self.dict[key] = data
+        else:
+            self.dict[key].update(data)
+
 
 class SessionManager(BaseManager):
     """

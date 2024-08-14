@@ -97,10 +97,7 @@ class DaedalusLogger(logging.Logger):
         hand = logging.FileHandler(log_file)
 
         # Set level
-        if self.debug_mode:
-            level = logging.DEBUG
-        else:
-            level = logging.WARNING
+        level = logging.DEBUG if self.debug_mode else logging.INFO
         hand.setLevel(level)
 
         # Create formatters and add it to handlers
@@ -118,7 +115,7 @@ class DaedalusLogger(logging.Logger):
         cons = logging.StreamHandler()
 
         # Set level
-        level = logging.DEBUG if self.debug_mode else logging.WARNING
+        level = logging.DEBUG if self.debug_mode else logging.INFO
         cons.setLevel(level)
 
         # Create formatters and add it to handlers
@@ -200,8 +197,16 @@ class DaedalusLogger(logging.Logger):
         for handler in list(self.handlers):
             self.removeHandler(handler)
 
-    def close_file(self):
+    def close_handlers(self):
+        """
+        Closes the handlers associated with the logger.
+
+        This method iterates over the handlers of the logger and removes them from the logger. If a handler is an instance of
+        `logging.FileHandler`, it is closed before being removed.
+
+        """
         for handler in self.handlers:
+            self.removeHandler(handler)
             if isinstance(handler, logging.FileHandler):
                 handler.close()
 
@@ -249,11 +254,11 @@ class CustomFormatter(logging.Formatter):
         time = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
 
         # Create the formatted log message
-        log_msg = f"{time} | @{function} | {level} | {record.msg}"
+        log_msg = f"{time} | @{function} | {level} | "
         if hasattr(record, "block"):
-            log_msg += f"BLOCK {record.block} | " # type: ignore
+            log_msg += f"BLOCK {record.block} | "
         if hasattr(record, "trial"):
-            log_msg += f"TRIAL {record.trial} | " # type: ignore
+            log_msg += f"TRIAL {record.trial} | "
         log_msg += f"{record.msg}"
 
         return log_msg

@@ -121,8 +121,8 @@ def set_plotting_style(theme_params, rc_params, font_dir=None):
         font_dir (str): The directory where the font is located.
     """
     if font_dir is not None:
-        add_font(theme_params["font_name"], font_dir)
-    sns.set_them(**theme_params, rc=rc_params)
+        add_font(rc_params["font.family"], font_dir)
+    sns.set_theme(**theme_params, rc=rc_params)
 
 
 def add_font(font_name: str, font_dir: str):
